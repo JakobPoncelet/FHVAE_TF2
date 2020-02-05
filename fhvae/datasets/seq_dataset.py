@@ -98,9 +98,19 @@ def subset_d(d, l):
 
 # regularized version
 def load_talab(spec, seqlist=None, copy_from=None):
-    name, nclass, path = spec
+
+    if len(spec) == 3:
+        name, nclass, path = spec
+        seq2lab = scp2dict(path, int, seqlist)
+    else:
+        name, path = spec
+
+    # keep dictionary with all labels and transform them to integers
+    talab_vals = OrderedDict()
+    talab_cnt = 0
+
     if copy_from == None:
-        with open(path + '.' + name) as f:
+        with open(path) as f:
             toks_l = [line.rstrip().split() for line in f]
         assert (len(toks_l) > 0 and len(toks_l[0]) == 1)
         seq2talabseq = OrderedDict()
@@ -112,7 +122,14 @@ def load_talab(spec, seqlist=None, copy_from=None):
                 seq = toks[0]
                 talabs = []
             elif len(toks) == 3:  # format start stop label
-                talab = TimeAlignedLabel(int(toks[2]), int(toks[0]), int(toks[1]))
+                if not isinstance(toks[2], int):
+                    if toks[2] not in talab_vals:
+                        talab_vals[toks[2]] = talab_cnt
+                        talab_cnt += 1
+                    lab = int(talab_vals[toks[2]])
+                else:
+                    lab = int(toks[2])
+                talab = TimeAlignedLabel(lab, int(toks[0]), int(toks[1]))
                 talabs.append(talab)
             else:
                 raise ValueError("invalid line %s" % str(toks))
@@ -123,9 +140,12 @@ def load_talab(spec, seqlist=None, copy_from=None):
     for k in list(seq2talabseq.keys()):
         alllab.update(set(seq2talabseq[k].lablist))
     nclass = len(alllab)
+
     #    for k in seg2talabseq.keys():
     #        append(alllab,seg2talabseq[k].lablist)
-    return name, nclass, seq2talabseq
+    #print("talab %s has %i different values" % (name, nclass))
+    #print('talabs lab to index: ', talab_vals)
+    return name, nclass, seq2talabseq, talab_vals
 
 
 class TimeAlignedLabel(object):
@@ -306,11 +326,13 @@ class SequenceDataset(object):
                 name, nclass, seq2lab = load_lab(lab_spec, self.seqlist)
             else:
                 name, nclass, seq2lab = load_lab(lab_spec, self.seqlist, copy_from)
-            name, nclass, seq2lab = load_lab(lab_spec, self.seqlist)
+            #name, nclass, seq2lab = load_lab(lab_spec, self.seqlist)
             self.labs_d[name] = Labels(name, nclass, seq2lab)
         self.talabseqs_d = OrderedDict()
+        self.talab_vals = OrderedDict()
         for talab_spec in talab_specs:
-            name, nclass, seq2talabs = load_talab(talab_spec, self.seqlist)
+            name, nclass, seq2talabs, talab_vals = load_talab(talab_spec, self.seqlist)
+            self.talab_vals[name] = talab_vals
             self.talabseqs_d[name] = TimeAlignedLabelSeqs(name, nclass, seq2talabs)
 
     def iterator(self, bs, lab_names=[], talab_names=[], seqs=None,

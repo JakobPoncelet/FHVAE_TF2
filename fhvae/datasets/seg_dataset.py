@@ -19,7 +19,7 @@ class Segment(object):
         return str(self)
 
 
-def make_segs(seqs, lens, labs, talabs, seg_len, seg_shift, rand_seg):
+def make_segs(seqs, lens, labs, talabs, seg_len, seg_shift, rand_seg, sam_frame):
     """
     Args:
         seqs(list): list of sequences
@@ -41,13 +41,16 @@ def make_segs(seqs, lens, labs, talabs, seg_len, seg_shift, rand_seg):
             starts = np.arange(nseg) * seg_shift
         for start in starts:
             end = start + seg_len
-            seg_talab = [s.center_lab(start, end) for s in talab]
+            seg_talab = [s.center_lab(start * sam_frame, end * sam_frame) for s in talab]
             segs.append(Segment(seq, start, end, lab, seg_talab))
+
+    # segs: list with items (segname, start, end, [lab1, lab2], [talab])
+    # e.g. seg[0] = (fmpg0_sa1, 213, 233, ['f', '5'], [0])
     return segs, nsegs
 
 
 class SegmentDataset(object):
-    def __init__(self, seq_d, seg_len=20, seg_shift=8, rand_seg=False):
+    def __init__(self, seq_d, seg_len=20, seg_shift=8, rand_seg=False, sam_frame=160):
         """
         Args:
             seq_d(SequenceDataset): SequenceDataset or its child class
@@ -61,11 +64,14 @@ class SegmentDataset(object):
         self.seg_shift = seg_shift
         self.rand_seg = rand_seg
 
+        self.sam_frame = sam_frame
+
         self.seqlist = self.seq_d.seqlist
         self.feats = self.seq_d.feats
         self.lens = self.seq_d.lens
         self.labs_d = self.seq_d.labs_d
         self.talabseqs_d = self.seq_d.talabseqs_d
+        self.talab_vals = self.seq_d.talab_vals
 
     def seq_iterator(self, bs, lab_names=[], talab_names=[], seqs=None,
                      shuffle=False, rem=True, mapper=None):
@@ -101,7 +107,7 @@ class SegmentDataset(object):
                                          seqs, seq_shuffle, seq_rem, seq_mapper)
         for seq_keys, seq_feats, seq_lens, seq_labs, seq_talabs in seq_iterator:
             segs, seq_nsegs = make_segs(seq_keys, seq_lens, seq_labs, seq_talabs,
-                                        self.seg_len, seg_shift, rand_seg)
+                                        self.seg_len, seg_shift, rand_seg, self.sam_frame)
             if seg_shuffle:
                 np.random.shuffle(segs)
 
@@ -135,8 +141,8 @@ class SegmentDataset(object):
 
 class NumpySegmentDataset(SegmentDataset):
     def __init__(self, feat_scp, len_scp, lab_specs=[], talab_specs=[], min_len=1,
-                 preload=False, mvn_path=None, seg_len=20, seg_shift=8, rand_seg=False, copy_from=None):
+                 preload=False, mvn_path=None, seg_len=20, seg_shift=8, rand_seg=False, copy_from=None, sam_frame=160):
         seq_d = NumpyDataset(feat_scp, len_scp, lab_specs, talab_specs,
                              min_len, preload, mvn_path, copy_from)
         super(NumpySegmentDataset, self).__init__(
-            seq_d, seg_len, seg_shift, rand_seg)
+            seq_d, seg_len, seg_shift, rand_seg, sam_frame)

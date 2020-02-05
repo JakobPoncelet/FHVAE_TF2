@@ -20,7 +20,7 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
     os.makedirs(checkpoint_directory, exist_ok=True)
     #checkpoint_prefix = os.path.join(checkpoint_directory, 'ckpt')
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
-    manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_directory, max_to_keep=5)
+    manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_directory, max_to_keep=conf['n_patience']+1)
 
     logdir = os.path.join(exp_dir, "logdir")
     os.makedirs(logdir, exist_ok=True)
@@ -29,22 +29,30 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
 
     step_losses = []
     mean_losses = []
+    valid_losses = []
 
     meanloss_file = os.path.join(exp_dir, 'result_mean_loss.txt')
     comploss_file = os.path.join(exp_dir, 'result_comp_loss.txt')
+    validloss_file = os.path.join(exp_dir, 'result_valid_loss.txt')
 
     if os.path.exists(meanloss_file):
         os.remove(meanloss_file)
     if os.path.exists(comploss_file):
         os.remove(comploss_file)
+    if os.path.exists(validloss_file):
+        os.remove(validloss_file)
 
     flag = True
 
-    for epoch in range(conf['n_epochs']):
-        print("EPOCH %i\n" % (epoch+1))
-        start = time.time()
+    best_epoch, best_valid_loss = 0, np.inf
+    start = time.time()
+
+    for epoch in range(1, conf['n_epochs']+1):
+        print("EPOCH %i\n" % epoch)
+        epoch_start = time.time()
         train_loss.reset_states()
 
+        # hierarchical sampling
         s_seqs = sample_tr_seqs(conf['nmu2'])
         s_iterator = lambda: tr_iterator_by_seqs(s_seqs, seg_rem=True)
 
@@ -53,38 +61,49 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
         mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
         model.mu2_table.assign(mu2_table)
 
-        # train loop over dataset
-        for xval, yval, nval, cval in tr_iterator_by_seqs(s_seqs):
+        # train loop over the samples from the dataset
+        for xval, yval, nval, cval, bval in tr_iterator_by_seqs(s_seqs):
 
             # FOR NOW USE CVAL FOR BOTH bREG AND cREG....
             step_loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss, flag \
-                = train_step(model, tf.stack(xval, axis=0), yval, nval, cval, cval, optimizer, train_loss, flag)
-
-            step_losses.append(step_loss)
+                = train_step(model, tf.stack(xval, axis=0), yval, nval, bval, cval, optimizer, train_loss, flag)
 
             # print the results to a file
+            step_losses.append(step_loss)
             with open(comploss_file, "a+") as pid:
                 pid.write("Loss: %f \t \t lb=%f \t log_qy=%f \t log_b=%f \t log_c=%f \n" % \
                  (step_loss, -tf.reduce_mean(lb), -tf.reduce_mean(log_qy), -tf.reduce_mean(log_b_loss), -tf.reduce_mean(log_c_loss)))
                 pid.write("\t lower bound components: \t log_pmu2=%f \t neg_kld_z2=%f \t neg_kld_z1=%f \t log_px_z=%f \n" % \
                  (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1), -tf.reduce_mean(log_px_z)))
 
-        print('Resulting mean-loss of epoch {} is {:.4f}, which took {} seconds to run'.format(epoch+1, train_loss.result(), time.time()-start))
+        print('Resulting mean-loss of epoch {} is {:.4f}, which took {} seconds to run'.format(epoch, train_loss.result(), time.time()-epoch_start))
         mean_losses.append(float(train_loss.result()))
-
         with open(meanloss_file, "a+") as fid:
-            fid.write('Resulting mean-loss of epoch {} is {:.4f}, which took {} seconds to run\n'.format(epoch+1, train_loss.result(), time.time()-start))
-
+            fid.write('Resulting mean-loss of epoch {} is {:.4f}, which took {} seconds to run\n'.format(epoch, train_loss.result(), time.time()-epoch_start))
 
         tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
 
         #checkpoint.save(file_prefix=checkpoint_prefix)
         manager.save()
 
+        #validation step
+        valid_loss = validation_step(model, dt_iterator, conf)
+        valid_losses.append(valid_loss)
+        with open(validloss_file, "a+") as fid:
+            fid.write('Validation loss of epoch {} is {:.4f} \n'.format(epoch, valid_loss))
+
+        #early stopping
+        best_epoch, best_valid_loss, is_finished = check_finished(conf, epoch, best_epoch, valid_loss, best_valid_loss)
+        if is_finished:
+            break
+
+    print('Complete run over {} epochs with {} steps per epoch, took {} seconds\n'.format(conf['n_epochs'], conf['n_steps_per_epoch'], time.time()-start))
+    print('Best run was in epoch {} with a validation loss of {} \n'.format(best_epoch, best_valid_loss))
+
     plt.figure('result-steploss')
     plt.plot(step_losses)
-    plt.xlabel('Batch #')
-    plt.ylabel('Step Loss')
+    plt.xlabel('Steps #')
+    plt.ylabel('Step Loss (steps / print_num_steps)')
     plt.savefig(os.path.join(exp_dir, 'result_comp_loss.pdf'), format='pdf')
 
     plt.figure('result-meanloss')
@@ -92,6 +111,7 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
     plt.xlabel('Epochs #')
     plt.ylabel('Mean Loss')
     plt.savefig(os.path.join(exp_dir, 'result_mean_loss.pdf'), format='pdf')
+
 
 #@tf.function
 def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss, flag):
@@ -138,19 +158,12 @@ def estimate_mu2_dict(model, iterator):
     nseg_table = defaultdict(float)
     z2_sum_table = defaultdict(float)
 
-    for x_val, y_val, _, _ in iterator():
+    for x_val, y_val, _, _, _ in iterator():
         z2_mu = model.encoder.z2_mu_separate(tf.stack(x_val, axis=0))
-
 
         for idx, _y in enumerate(y_val):
             z2_sum_table[_y] += z2_mu[idx, :]
             nseg_table[_y] += 1
-
-        # the above instead of the zip-method below because TF2 does not allow iterating over tensors
-
-        #for _y, _z2 in zip(y_val, z2_mu):
-        #    z2_sum_table[_y] += _z2
-        #    nseg_table[_y] += 1
 
     mu2_dict = dict()
     for _y in nseg_table:
@@ -162,35 +175,45 @@ def estimate_mu2_dict(model, iterator):
     return mu2_dict
 
 
-# while True:
-#     s_seqs = sample_tr_seqs(nmu2)
-#     s_iterator = lambda: tr_iterator_by_seqs(s_seqs, seg_rem=True)
-#     mu2_dict = _est_mu2_dict(sess, model, s_iterator)
-#     mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
-#     update_mu2_table(sess, model, mu2_table)
-#     for x_val, y_val, n_val, c_val in tr_iterator_by_seqs(s_seqs):
-#         feed_dict = _feed_dict(x_val, y_val, n_val, c_val)
-#         global_step, _ = sess.run([global_step_var, apply_grad_op], feed_dict)
-#
-#         if global_step % n_print_steps == 0 and global_step != init_step:
-#             feed_dict = _feed_dict(x_val, y_val, n_val, c_val)
-#             tr_sum_vals = sess.run(tr_sum_vars, feed_dict)
-#             is_diverged = _print_prog(tr_sum_names, tr_sum_vals)
-#             if is_diverged:
-#                 print("training diverged...")
-#                 return
-#             ptime = time.time()
-#
-#         if global_step % n_steps_per_epoch == 0 and global_step != init_step:
-#             is_best, dt_sum_vals = _valid_step()
-#             if is_best:
-#                 best_epoch, best_dt_lb = epoch, dt_sum_vals[0]
-#             saver.save(sess, "%s/models/fhvae" % exp_dir, global_step=global_step)
-#             _save_prog(dt_sum_vals)
-#             epoch += 1
-#             if _check_terminate(epoch, best_epoch, n_patience, n_epochs):
-#                 print("training finished...")
-#                 return
-#             etime = time.time()
-#     passes += 1
+def validation_step(model, dt_iterator, conf):
+    """
+    calculate loss on development set
+    """
+    validloss = 0
+    tot_segs = 0
 
+    mu2_dict = estimate_mu2_dict(model, dt_iterator)
+    mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
+
+    # pad to size=nmu2 as initialized in model (however will not work if test set is larger than nmu2.....)
+    filler = np.zeros(((int(conf['nmu2']) - mu2_table.shape[0]), mu2_table.shape[1]))
+    mu2_table = np.vstack((mu2_table, filler))
+    model.mu2_table.assign(mu2_table)
+
+    for xval, yval, nval, cval, bval in dt_iterator(bs=2048):
+
+        mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits = model(tf.stack(xval, axis=0), yval)
+
+        loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss = \
+            model.compute_loss(xval, yval, nval, bval, cval, mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits,
+                               z2_rlogits)
+
+        validloss += loss * len(xval)
+        tot_segs += len(xval)
+
+    return validloss / tot_segs
+
+
+def check_finished(conf, epoch, best_epoch, val_loss, best_val_loss):
+    """
+    stop if validation loss doesnt improve after n_patience epochs
+    """
+    is_finished = False
+    if val_loss < best_val_loss:
+        best_epoch = epoch
+        best_val_loss = val_loss
+
+    if (best_epoch - epoch) > conf['n_patience']:
+        is_finished = True
+
+    return best_epoch, best_val_loss, is_finished

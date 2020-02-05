@@ -171,11 +171,45 @@ tt_facs_f.close()
 print("stored all regularizing factors")
 
 # put the phones with start/end times in a file
-talabs = "%s/fac/all_talabs_phone.scp" % args.out_dir
-maybe_makedir(os.path.dirname(talabs))
+talabs = "%s/fac/all_facs_phone.scp" % args.out_dir
+class1 = "%s/fac/all_facs_class1.scp" % args.out_dir
+class2 = "%s/fac/all_facs_class2.scp" % args.out_dir
 
+talabs_tt = "%s/fac/test_talabs.scp" % args.out_dir
+class1_tt = "%s/fac/test_class1.scp" % args.out_dir
+class2_tt = "%s/fac/test_class2.scp" % args.out_dir
+
+maybe_makedir(os.path.dirname(talabs))
+maybe_makedir(os.path.dirname(class1))
+maybe_makedir(os.path.dirname(class2))
+maybe_makedir(os.path.dirname(talabs_tt))
+maybe_makedir(os.path.dirname(class1_tt))
+maybe_makedir(os.path.dirname(class2_tt))
+
+# key=phone, value=phoneid (number)
 phone_ids = {}
+# key=phone, value=phoneclass
+phoneclass1 = {}
+phoneclass2 = {}
+
+with open('./misc/timit_phoneclasses.txt', "r") as pid:
+    line = pid.readline()  #skip header
+    line = pid.readline()
+    while line:
+        c1 = line.split("\t")[0]
+        c2 = line.split("\t")[1]
+        phones = line.split("\t")[2]
+        for phone in phones.rstrip().split(" "):
+            phoneclass1[phone] = c1
+            phoneclass2[phone] = c2
+        line = pid.readline()
+
 talabs_f = open(talabs, "w")
+class1_f = open(class1, "w")
+class2_f = open(class2, "w")
+talabs_t = open(talabs_tt, "w")
+class1_t = open(class1_tt, "w")
+class2_t = open(class2_tt, "w")
 
 cnt = 0
 for root, _, fnames in sorted(os.walk(args.timit_wav_dir)):
@@ -185,13 +219,20 @@ for root, _, fnames in sorted(os.walk(args.timit_wav_dir)):
         if fname.endswith(".phn"):
             uttid = "%s_%s" % (spk, os.path.splitext(fname)[0])
             talabs_f.write(str(uttid)+"\n")
+            class1_f.write(str(uttid)+"\n")
+            class2_f.write(str(uttid) + "\n")
+
+            if spk in tt_spks:
+                talabs_t.write(str(uttid) + "\n")
+                class1_t.write(str(uttid) + "\n")
+                class2_t.write(str(uttid) + "\n")
 
             with open(os.path.join(root, fname), "r") as pid:
                 line = pid.readline()
                 while line:
                     start = line.split(" ")[0]
                     end = line.split(" ")[1]
-                    phone = line.split(" ")[2]
+                    phone = line.split(" ")[2].rstrip()
 
                     if phone in phone_ids:
                         phone_id = phone_ids[phone]
@@ -201,13 +242,26 @@ for root, _, fnames in sorted(os.walk(args.timit_wav_dir)):
                         cnt += 1
 
                     talabs_f.write(str(start)+" "+str(end)+" "+str(phone_id)+"\n")
+                    class1_f.write(str(start)+" "+str(end)+" "+str(phoneclass1[phone])+"\n")
+                    class2_f.write(str(start)+" "+str(end)+" "+str(phoneclass2[phone])+"\n")
+
+                    if spk in tt_spks:
+                        talabs_t.write(str(start) + " " + str(end) + " " + str(phone_id) + "\n")
+                        class1_t.write(str(start) + " " + str(end) + " " + str(phoneclass1[phone]) + "\n")
+                        class2_t.write(str(start) + " " + str(end) + " " + str(phoneclass2[phone]) + "\n")
+
                     line = pid.readline()
 
 talabs_f.close()
+class1_f.close()
+class2_f.close()
+talabs_t.close()
+class1_t.close()
+class2_t.close()
 
 phonetable = "%s/fac/phonetable.txt" % args.out_dir
-with open(phonetable,"w") as lid:
+with open(phonetable, "w") as lid:
     for key in sorted(phone_ids, key=phone_ids.get):
-        lid.write(str(phone_ids[key])+" "+str(key))
+        lid.write(str(phone_ids[key])+" "+str(key)+"\n")
 
 print("stored all talabs")

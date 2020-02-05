@@ -13,7 +13,7 @@ from .plotter import plot_x, scatter_plot
 
 np.random.seed(123)
 
-def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_seq2lab_d):
+def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_dset):
     '''
     Compute variational lower bound
     '''
@@ -40,19 +40,21 @@ def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_
     avg_loss, avg_vals = compute_average_values(model, dt_iterator, conf)
 
     print("\nCOMPUTING VALUES BY SEQUENCE")
-    z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1 = \
-        compute_values_by_seq(model, conf, dt_iterator_by_seqs, dt_seqs, expdir)
+    z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1, \
+        z2reg_by_seq, bReg_by_seq, cReg_by_seq = compute_values_by_seq(model, conf, dt_iterator_by_seqs, dt_seqs, expdir)
 
-    if dt_seq2lab_d is not None:
-        print("\nCOMPUTING PREDICTION ACCURACIES FOR LABELS (FROM Z2)")
-        labels, accs = compute_pred_acc(expdir, model, conf, dt_seqs, dt_seq2lab_d, regpost_by_seq)
+    print("\nCOMPUTING PREDICTION ACCURACIES FOR LABELS FROM Z2")
+    labels, accs = compute_pred_acc_z2(expdir, model, conf, dt_seqs, dt_dset, regpost_by_seq, z2reg_by_seq, cReg_by_seq)
+
+    print("\nCOMPUTING PREDICTION ACCURACIES FOR TIME ALIGNED LABELS FROM Z1")
+    labels, accs = compute_pred_acc_z1(expdir, model, conf, dt_seqs, dt_dset, regpost_by_seq, z1reg_by_seq, bReg_by_seq)
 
     print("\nVISUALIZING RESULTS")
-    visualize_reg_vals(expdir, model, dt_seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq)
+    visualize_reg_vals(expdir, model, dt_seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, \
+                       xout_by_seq, xoutv_by_seq, z1reg_by_seq)
 
-    if dt_seq2lab_d is not None:
-        print("\nVISUALIZING TSNE BY LABEL")
-        tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_seq2lab_d)
+    print("\nVISUALIZING TSNE BY LABEL")
+    tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_dset)
 
     print("\nFINISHED\nResults stored in %s/test" % expdir)
 
@@ -72,13 +74,13 @@ def compute_average_values(model, dt_iterator, conf):
     tot_segs = 0.
     avg_vals = [0. for _ in range(len(sum_names))]
 
-    for x_val, y_val, n_val, c_val in dt_iterator(conf['num_labs'], bs=2048):
+    for x_val, y_val, n_val, c_val, b_val in dt_iterator(bs=2048):
         x_val = tf.stack(x_val, axis=0)
 
         mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits = model(x_val, y_val)
 
         loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss = \
-            model.compute_loss(x_val, y_val, n_val, c_val, c_val, mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits)
+            model.compute_loss(x_val, y_val, n_val, b_val, c_val, mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits)
 
         results = [log_pmu2, neg_kld_z2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss]
         for i in range(len(sum_vals)):
@@ -104,10 +106,14 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
     xout_by_seq = defaultdict(list)
     xoutv_by_seq = defaultdict(list)
     z1reg_by_seq = defaultdict(list)
+    z2reg_by_seq = defaultdict(list)
     regpost_by_seq_z1 = dict()
+    bReg_by_seq = defaultdict(list)
+    cReg_by_seq = defaultdict(list)
 
     for seq in seqs:
-        for x, _, _, _ in iterator_by_seqs([seq], conf['num_labs']):
+        for x, _, _, c, b in iterator_by_seqs([seq]):
+
             x = tf.stack(x, axis=0)
 
             _, _, _, _, _, _, qz1_x, qz2_x = model.encoder(x)
@@ -121,8 +127,12 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
             xoutv_by_seq[seq].append(px_z[1])
 
             # probabilities of each of the regularisation classes given mean(z1)
-            z1_rlogits, _ = model.regulariser(qz1_x[0], qz2_x[0])
+            z1_rlogits, z2_rlogits = model.regulariser(qz1_x[0], qz2_x[0])
             z1reg_by_seq[seq] = list(map(_softmax, z1_rlogits))
+            z2reg_by_seq[seq] = list(map(_softmax, z2_rlogits))
+
+            cReg_by_seq[seq].append(c)
+            bReg_by_seq[seq].append(b)
 
         z1_by_seq[seq] = np.concatenate(z1_by_seq[seq], axis=0)
         z2_by_seq[seq] = np.concatenate(z2_by_seq[seq], axis=0)
@@ -130,6 +140,10 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         xout_by_seq[seq] = np.concatenate(xout_by_seq[seq], axis=0)
         xoutv_by_seq[seq] = np.concatenate(xoutv_by_seq[seq], axis=0)
         # z1reg_by_seq[seq] = np.concatenate(z1reg_by_seq[seq], axis=0)
+
+        bReg_by_seq[seq] = np.concatenate(bReg_by_seq[seq], axis=0)
+        cReg_by_seq[seq] = np.concatenate(cReg_by_seq[seq], axis=0)
+
 
         # formula for inferring S-vector mu2 during testing, paper p5 (over all segments from same sequence)
         z2_sum = np.sum(z2_by_seq[seq], axis=0)
@@ -149,6 +163,7 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         n = len(z1_by_seq[seq])
         r = np.exp(model.pz1_stddev ** 2)
         z1 = z1_sum / (n+r)
+        z1 = np.asarray(z1).reshape([1, z1.shape[0]])
 
         # probabilities given computed mu1
         z1_rlogits, _ = model.regulariser(z1, z2_by_seq[seq])
@@ -169,21 +184,25 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         with open(os.path.join(expdir, 'test', 'mu2_by_seq.npy'), "wb") as fnp:
             np.save(fnp, mumu)
 
-    return z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1
+    return z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1, z2reg_by_seq, bReg_by_seq, cReg_by_seq
 
-def compute_pred_acc(expdir, model, conf, seqs, dt_seq2lab_d, regpost_by_seq):
+def compute_pred_acc_z2(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z2reg_by_seq, cReg_by_seq):
 
     names = conf['facs'].split(':')
     lab2idx= conf['lab2idx']
     accuracies = [0. for _ in range(len(names))]
+    #accuracies_z2reg = [0. for _ in range(len(names))]
 
     for i, name in enumerate(names):
 
         ordered_labs = lab2idx[name]
-        truelabs = dt_seq2lab_d[name]
+        truelabs = dt_dset.labs_d[name].seq2lab
 
-        correct = 0
         total = 0
+
+        correct = 0  #using mu2
+        #correct_z2reg = 0  #using z2_rlogits
+
         with open("%s/test/txt/%s_predictions.scp" % (expdir, name), "w") as f:
             f.write("#seq truelabel predictedlabel      for class %s \n" % name)
             for seq in seqs:
@@ -195,12 +214,55 @@ def compute_pred_acc(expdir, model, conf, seqs, dt_seq2lab_d, regpost_by_seq):
                     correct += 1
                 f.write(seq+" "+str(truelabs[seq])+" "+str(pred_lab)+"\n")
 
+                #probs_z2reg = z2reg_by_seq[seq][i]
+                #pred_lab_z2reg = ordered_labs[np.argmax(np.sum(probs_z2reg, axis=0))+1]
+                #if pred_lab_z2reg == truelabs[seq]:
+                #    correct_z2reg += 1
+
         accuracies[i] = correct/total
         with open("%s/test/txt/%s_acc" % (expdir, name), "w") as fid:
             fid.write("%10.3f \n" % accuracies[i])
         print("prediction accuracy for labels of class %s is %f" % (name, accuracies[i]))
 
+        #accuracies_z2reg[i] = correct_z2reg/total
+        #print("prediction accuracy for labels of class from z2reg_by_seq %s is %f" % (name, accuracies[i]))
+
     return names, accuracies
+
+def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1reg_by_seq, bReg_by_seq):
+
+    names = conf['talabs'].split(':')
+
+    accuracies = [0. for _ in range(len(names))]
+
+    for i, name in enumerate(names):
+        with open("%s/test/txt/%s_predictions.scp" % (expdir, name), "w") as f:
+            f.write("#segmentnumber true prediction")
+            total = 0
+            correct = 0
+
+            for seq in seqs:
+                test = z1reg_by_seq[seq][0]
+                nsegs = z1reg_by_seq[seq][0].shape[0]
+                f.write('Sequence %s with %i segments \n' % (seq, nsegs))
+
+                for j in range(nsegs):
+                    total += 1
+
+                    truelab = bReg_by_seq[seq][j, i]
+                    pred_lab = np.argmax(z1reg_by_seq[seq][0][j, :])
+
+                    if pred_lab == truelab:
+                        correct += 1
+
+                    f.write("\t %i \t %i \t %i \n" % (j, truelab, pred_lab))
+
+        accuracies[i] = correct/total
+        with open("%s/test/txt/%s_acc" % (expdir, name), "w") as fid:
+            fid.write("%10.3f \n" % accuracies[i])
+        print("prediction accuracy for labels of class %s is %f" % (name, accuracies[i]))
+
+        return names, accuracies
 
 def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq):
 
@@ -312,7 +374,7 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
         scatter_plot(z2_tsne, seq_names, "z2_tsne_%03d" % p,
                      "%s/test/img/z2_tsne_%03d.png" % (expdir, p))
 
-def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, seq2lab_d):
+def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, dt_dset):
 
     if len(seqs) > 25:
         seqs = sorted(list(np.random.choice(seqs, 25, replace=False)))
@@ -321,7 +383,7 @@ def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, seq2lab_d):
     z1_by_seq = defaultdict(list)
     z2_by_seq = defaultdict(list)
     for seq in seqs:
-        for x, _, _, _ in iterator_by_seqs([seq], conf['num_labs']):
+        for x, _, _, _, _ in iterator_by_seqs([seq]):
             x = tf.stack(x, axis=0)
             _, _, _, _, _, _, qz1_x, qz2_x = model.encoder(x)
             z2_by_seq[seq].append(qz2_x[0])
@@ -339,13 +401,14 @@ def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, seq2lab_d):
     p = 30
     tsne = TSNE(n_components=2, verbose=0, perplexity=p, n_iter=1000)
     z1_tsne_by_seq = dict(list(zip(seqs, _unflatten(tsne.fit_transform(z1), n))))
-    for gen_fac, seq2lab in list(seq2lab_d.items()):
+
+    for gen_fac, seq2lab in list(dt_dset.labs_d.items()):
         _labs, _z1 = _join(z1_tsne_by_seq, seq2lab)
         scatter_plot(_z1, _labs, gen_fac,
                      "%s/test/img/tsne_by_label_z1_%s_%03d.png" % (expdir, gen_fac, p))
 
     z2_tsne_by_seq = dict(list(zip(seqs, _unflatten(tsne.fit_transform(z2), n))))
-    for gen_fac, seq2lab in list(seq2lab_d.items()):
+    for gen_fac, seq2lab in list(dt_dset.labs_d.items()):
         _labs, _z2 = _join(z2_tsne_by_seq, seq2lab)
         scatter_plot(_z2, _labs, gen_fac,
                      "%s/test/img/tsne_by_label_z2_%s_%03d.png" % (expdir, gen_fac, p))
@@ -361,7 +424,7 @@ def estimate_mu2_dict(model, conf, iterator):
     nseg_table = defaultdict(float)
     z2_sum_table = defaultdict(float)
 
-    for x_val, y_val, _, _ in iterator(conf['num_labs']):
+    for x_val, y_val, _, _, _ in iterator():
         z2_mu = model.encoder.z2_mu_separate(tf.stack(x_val, axis=0))
 
 
@@ -427,5 +490,4 @@ def _join(z_by_seqs, seq2lab):
     for lab in d:
         d[lab] = np.concatenate(d[lab], axis=0)
     return list(d.keys()), list(d.values())
-
 

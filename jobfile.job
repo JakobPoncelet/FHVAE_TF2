@@ -2,10 +2,10 @@ Universe = vanilla
 
 RequestCpus = 1
 RequestMemory = 10G
-+RequestWallTime = 40000
++RequestWallTime = 100000
 request_GPUs = 1
 
-Requirements = (CUDACapability >= 5.0)\
+Requirements = (CUDACapability >= 6.0)\
   &&(CUDAGlobalMemoryMb >= 5000)\
   &&(machine!="spchcl23.esat.kuleuven.be")\
   &&(machine!="spchcl24.esat.kuleuven.be")\
@@ -24,5 +24,7 @@ Arguments = "scripts/train/run_hs_train.py --expdir $(expdir)"
 Log          = $(expdir)/condor.log
 Output       = $(expdir)/condor.out
 Error        = $(expdir)/condor.err
+
+# usage: condor_submit jobfile.job expdir=/esat/spchdisk/scratch/jponcele/fhvae_jakob/exp
 
 Queue

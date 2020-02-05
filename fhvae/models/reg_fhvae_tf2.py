@@ -86,6 +86,7 @@ class RegFHVAEnew(tf.keras.Model):
         TensorList = [tf.expand_dims(-fn(labels=tf.squeeze(tf.slice(bReg, [0, i], [-1, 1]), axis=-1), \
                                          logits=z1_rlogits[i]), axis=1) for i, name in enumerate(self.z1_nlabs.keys())]
         log_b = tf.concat(TensorList, axis=1)
+
         TensorList = [tf.expand_dims(-fn(labels=tf.squeeze(tf.slice(cReg, [0, i], [-1, 1]), axis=-1), \
                                          logits=z2_rlogits[i]), axis=1) for i, name in enumerate(self.z2_nlabs.keys())]
         log_c = tf.concat(TensorList, axis=1)

@@ -17,6 +17,8 @@ from scripts.train.hs_train_loaders import load_data_reg
 from fhvae.runners.hs_train_fhvae_tf2 import hs_train_reg
 from fhvae.models.reg_fhvae_tf2 import RegFHVAEnew
 
+# For debugging on different GPU: os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
+
 '''
 Commands
 Script path:
@@ -46,23 +48,29 @@ def main(expdir):
 
     # set up the iterators over the dataset
     tr_nseqs, tr_shape, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator, tr_dset = \
-        load_data_reg(conf['dataset'], conf['fac_root'], conf['facs'])
+        load_data_reg(conf['dataset'], conf['fac_root'], conf['facs'], conf['talabs'])
 
     # identify regularizing factors
     used_labs = conf['facs'].split(':')
     lab2idx = {name:tr_dset.labs_d[name].lablist for name in used_labs}
-    print("labels and indices: ", lab2idx)
+    print("labels and indices of facs: ", lab2idx)
     conf['lab2idx'] = lab2idx
 
-    c_n = OrderedDict([(lab, tr_dset.labs_d[lab].nclass) for lab in used_labs])  # ordering correct ?
+    used_talabs = conf['talabs'].split(':')
+    conf['talab_vals'] = tr_dset.talab_vals
+    print("labels and indices of talabs: ", tr_dset.talab_vals)
+
+    c_n = OrderedDict([(lab, tr_dset.labs_d[lab].nclass) for lab in used_labs])
 
     # FOR NOW USE THE LABELS FOR z2 ALSO FOR z1 TO TEST IF IT WORKS (with alpha_reg_b = 0 to prevent regularizing z1)
-    b_n = c_n
+    #b_n = c_n
+    b_n = OrderedDict([(talab, tr_dset.talabseqs_d[talab].nclass) for talab in used_talabs])
 
     # save input shape [e.g. tuple (20,80)] and numclasses for testing phase
     conf['tr_shape'] = tr_shape
     conf['c_n'] = c_n
     conf['b_n'] = b_n
+
     with open(os.path.join(expdir, 'trainconf.pkl'), "wb") as fid:
         pickle.dump(conf, fid)
 
