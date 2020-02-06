@@ -316,8 +316,8 @@ class Regulariser(layers.Layer):
             T = tf.shape(input=tens)[0]
             z = tf.zeros([T, 1], dtype=tf.float32)
             # add column of zeros at start
-            rlogits.append(tf.concat((z, tens), axis=1))
-            #rlogits.append(tens)
+            #rlogits.append(tf.concat((z, tens), axis=1))
+            rlogits.append(tens)
 
         return rlogits
 
@@ -339,5 +339,6 @@ def kld(p_mu, p_logvar, q_mu, q_logvar):
     """
     compute D_KL(p || q) of two Gaussians
     """
+    # Added extra brackets after the minus sign
     return -0.5 * (1 + p_logvar - q_logvar - \
-            ((p_mu - q_mu) ** 2 + tf.exp(p_logvar)) / tf.exp(q_logvar))
+                   (((p_mu - q_mu) ** 2 + tf.exp(p_logvar)) / tf.exp(q_logvar)))

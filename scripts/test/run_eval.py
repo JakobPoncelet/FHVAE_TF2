@@ -43,8 +43,6 @@ def main(expdir):
     conf['tr_shape'] = trainconf['tr_shape']
     conf['lab2idx'] = trainconf['lab2idx']
 
-    #dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_seq2lab_d = \
-    #    load_data_reg(conf['dataset_test'], conf['set_name'], conf['lab_seqlist'], conf['talab_seqlist'])
     tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset = \
         load_data_reg(conf['dataset_test'], conf['set_name'], conf['fac_root'], conf['facs'], conf['talabs'])
 
@@ -68,6 +66,7 @@ def main(expdir):
 
     test_reg(expdir, model, conf, tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset)
 
+
 def load_config(conf):
     ''' Load configfile and extract arguments as a dict '''
     cfgfile = ConfigParser(interpolation=None)
@@ -81,6 +80,7 @@ def load_config(conf):
             # text / paths
             pass
     return test_conf
+
 
 if __name__ == '__main__':
 

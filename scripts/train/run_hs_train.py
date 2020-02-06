@@ -60,10 +60,10 @@ def main(expdir):
     conf['talab_vals'] = tr_dset.talab_vals
     print("labels and indices of talabs: ", tr_dset.talab_vals)
 
+    # For now, apply talabs on z1 (e.g. phones) and labs on z2 (e.g. region, gender).
+    # To switch, swap b_n/c_n in z_nlabs and b/c in _make_batch of hs_train_loaders
+    # (will also require changes to eval script)
     c_n = OrderedDict([(lab, tr_dset.labs_d[lab].nclass) for lab in used_labs])
-
-    # FOR NOW USE THE LABELS FOR z2 ALSO FOR z1 TO TEST IF IT WORKS (with alpha_reg_b = 0 to prevent regularizing z1)
-    #b_n = c_n
     b_n = OrderedDict([(talab, tr_dset.talabseqs_d[talab].nclass) for talab in used_talabs])
 
     # save input shape [e.g. tuple (20,80)] and numclasses for testing phase
@@ -79,7 +79,6 @@ def main(expdir):
                         x_rhus=conf['x_rhus'], nmu2=conf['nmu2'], z1_nlabs=b_n, z2_nlabs=c_n, \
                         mu_nl=None, logvar_nl=None, tr_shape=tr_shape, alpha_dis=conf['alpha_dis'], \
                         alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
-
 
     # START
     hs_train_reg(expdir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator)
@@ -98,6 +97,7 @@ def load_config(conf):
             # text / paths
             pass
     return train_conf
+
 
 if __name__ == '__main__':
 

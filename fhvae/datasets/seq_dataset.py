@@ -19,12 +19,6 @@ def scp2dict(path, dtype=str, seqlist=None):
     return d
 
 
-# original load_lab
-# def load_lab(spec, seqlist=None):
-#    name, nclass, path = spec
-#    seq2lab = scp2dict(path, int, seqlist)
-#    return name, nclass, seq2lab
-
 # Regularized version
 def load_lab(spec, seqlist=None, copy_from=None):
     if len(spec) == 3:
@@ -74,28 +68,6 @@ def subset_d(d, l):
     return new_d
 
 
-# original load_talab
-# def load_talab(spec, seqlist=None):
-#     name, nclass, path = spec
-#     with open(path) as f:
-#         toks_l = [line.rstrip().split() for line in f]
-#     assert(len(toks_l) > 0 and len(toks_l[0]) == 1)
-#     seq2talabseq = OrderedDict()
-#     seq = toks_l[0][0]
-#     talabs = []
-#     for toks in toks_l[1:]:
-#         if len(toks) == 1:
-#             seq2talabseq[seq] = TimeAlignedLabelSeq(talabs)
-#             seq = toks[0]
-#             talabs = []
-#         elif len(toks) == 3:
-#             talab = TimeAlignedLabel(int(toks[2]), int(toks[0]), int(toks[1]))
-#             talabs.append(talab)
-#         else:
-#             raise ValueError("invalid line %s" % str(toks))
-#     seq2talabseq[seq] = TimeAlignedLabelSeq(talabs)
-#     return name, nclass, seq2talabseq
-
 # regularized version
 def load_talab(spec, seqlist=None, copy_from=None):
 
@@ -107,7 +79,8 @@ def load_talab(spec, seqlist=None, copy_from=None):
 
     # keep dictionary with all labels and transform them to integers
     talab_vals = OrderedDict()
-    talab_cnt = 0
+    talab_vals[""] = 0  # add empty label
+    talab_cnt = 1
 
     if copy_from == None:
         with open(path) as f:
@@ -139,6 +112,7 @@ def load_talab(spec, seqlist=None, copy_from=None):
     alllab = set()
     for k in list(seq2talabseq.keys()):
         alllab.update(set(seq2talabseq[k].lablist))
+    alllab.add("")  # this will add to set if not present yet
     nclass = len(alllab)
 
     #    for k in seg2talabseq.keys():

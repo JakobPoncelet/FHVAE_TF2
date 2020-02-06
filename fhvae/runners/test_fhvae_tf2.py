@@ -19,16 +19,20 @@ def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_
     '''
 
     print("\nRESTORING MODEL")
+    starttime = time.time()
     optimizer = tf.keras.optimizers.Adam(learning_rate=conf['lr'], beta_1=conf['beta1'], beta_2=conf['beta2'], epsilon=conf['adam_eps'], amsgrad=False)
     checkpoint_directory = os.path.join(expdir, 'training_checkpoints')
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
-    manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_directory, max_to_keep=5)
 
-    starttime = time.time()
-    status = checkpoint.restore(manager.latest_checkpoint)
-    #status = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_directory))
+    if os.path.exists(os.path.join(checkpoint_directory, 'best_checkpoint')):
+        with open(os.path.join(checkpoint_directory, 'best_checkpoint'), 'r') as pid:
+            best_checkpoint = (pid.readline()).rstrip()
+        status = checkpoint.restore(os.path.join(checkpoint_directory, 'ckpt-' + str(best_checkpoint)))
+    else:
+        manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_directory, max_to_keep=5)
+        status = checkpoint.restore(manager.latest_checkpoint)
+
     print("restoring model takes %.2f seconds" % (time.time()-starttime))
-
     status.assert_existing_objects_matched()
     #status.assert_consumed()
 
@@ -57,6 +61,7 @@ def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_
     tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_dset)
 
     print("\nFINISHED\nResults stored in %s/test" % expdir)
+
 
 def compute_average_values(model, dt_iterator, conf):
 
@@ -95,6 +100,7 @@ def compute_average_values(model, dt_iterator, conf):
         print("\t average value for %s \t= %f" % (sum_names[i], avg_vals[i]))
 
     return avg_loss, avg_vals
+
 
 def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
 
@@ -186,6 +192,7 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
 
     return z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1, z2reg_by_seq, bReg_by_seq, cReg_by_seq
 
+
 def compute_pred_acc_z2(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z2reg_by_seq, cReg_by_seq):
 
     names = conf['facs'].split(':')
@@ -209,7 +216,7 @@ def compute_pred_acc_z2(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z2re
                 total += 1
                 probs = regpost_by_seq[seq][i]
                 # the predicted labels are shifted by one for some reason, empty label is now at end instead of start
-                pred_lab = ordered_labs[np.argmax(probs)+1]
+                pred_lab = ordered_labs[np.argmax(probs)]
                 if pred_lab == truelabs[seq]:
                     correct += 1
                 f.write(seq+" "+str(truelabs[seq])+" "+str(pred_lab)+"\n")
@@ -229,6 +236,7 @@ def compute_pred_acc_z2(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z2re
 
     return names, accuracies
 
+
 def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1reg_by_seq, bReg_by_seq):
 
     names = conf['talabs'].split(':')
@@ -237,12 +245,11 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
 
     for i, name in enumerate(names):
         with open("%s/test/txt/%s_predictions.scp" % (expdir, name), "w") as f:
-            f.write("#segmentnumber true prediction")
+            f.write("#segmentnumber true prediction \n")
             total = 0
             correct = 0
 
             for seq in seqs:
-                test = z1reg_by_seq[seq][0]
                 nsegs = z1reg_by_seq[seq][0].shape[0]
                 f.write('Sequence %s with %i segments \n' % (seq, nsegs))
 
@@ -250,7 +257,11 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
                     total += 1
 
                     truelab = bReg_by_seq[seq][j, i]
-                    pred_lab = np.argmax(z1reg_by_seq[seq][0][j, :])
+                    pred_lab = np.argmax(z1reg_by_seq[seq][i][j, :])
+
+                    # cast the 'pau' phone onto 'h#', both non-speech/silence
+                    #if name == 'phones' and pred_lab == 54:
+                    #    pred_lab = 0
 
                     if pred_lab == truelab:
                         correct += 1
@@ -262,7 +273,8 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
             fid.write("%10.3f \n" % accuracies[i])
         print("prediction accuracy for labels of class %s is %f" % (name, accuracies[i]))
 
-        return names, accuracies
+    return names, accuracies
+
 
 def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq):
 
@@ -374,6 +386,7 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
         scatter_plot(z2_tsne, seq_names, "z2_tsne_%03d" % p,
                      "%s/test/img/z2_tsne_%03d.png" % (expdir, p))
 
+
 def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, dt_dset):
 
     if len(seqs) > 25:
@@ -413,6 +426,17 @@ def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, dt_dset):
         scatter_plot(_z2, _labs, gen_fac,
                      "%s/test/img/tsne_by_label_z2_%s_%03d.png" % (expdir, gen_fac, p))
 
+    for gen_talab, seq2talabseq in list(dt_dset.talabseqs_d.items()):
+        _talabs, _z1 = _join_talab(z1_tsne_by_seq, seq2talabseq.seq2talabseq, dt_dset.talab_vals[gen_talab])
+        scatter_plot(_z1, _talabs, gen_talab,
+                     "%s/test/img/tsne_by_label_z1_%s_%03d.png" % (expdir, gen_talab, p))
+
+    for gen_talab, seq2talabseq in list(dt_dset.talabseqs_d.items()):
+        _talabs, _z2 = _join_talab(z2_tsne_by_seq, seq2talabseq.seq2talabseq, dt_dset.talab_vals[gen_talab])
+        scatter_plot(_z2, _talabs, gen_talab,
+                     "%s/test/img/tsne_by_label_z2_%s_%03d.png" % (expdir, gen_talab, p))
+
+
 def estimate_mu2_dict(model, conf, iterator):
     """
     estimate mu2 for sequences produced by iterator
@@ -447,6 +471,7 @@ def estimate_mu2_dict(model, conf, iterator):
 
     return mu2_dict
 
+
 def _print_mu2_stat(mu2_dict):
     norm_sum = 0.
     dim_norm_sum = 0.
@@ -458,11 +483,13 @@ def _print_mu2_stat(mu2_dict):
     print("avg. norm = %.2f, #mu2 = %s" % (avg_norm, len(mu2_dict)))
     print("per dim: %s" % (" ".join(["%.2f" % v for v in avg_dim_norm]),))
 
+
 def _softmax(x):
     ## First column are zeros (as added in fix_logits in model, so leave these out and return size-1 tens
-    y = np.exp(x[:, 1:])
-    return y / np.sum(y, axis=1, keepdims=True)
-    #return tf.nn.softmax(x, axis=1)
+    #y = np.exp(x[:, 1:])
+    #return y / np.sum(y, axis=1, keepdims=True)
+    return tf.nn.softmax(x, axis=1)
+
 
 def _seq_translate(model, tr_shape, src_z1, src_z2, del_mu2):
     mod_z2 = src_z2 + del_mu2[np.newaxis, ...]
@@ -470,6 +497,7 @@ def _seq_translate(model, tr_shape, src_z1, src_z2, del_mu2):
         np.zeros((len(src_z1), tr_shape[0], tr_shape[1]), dtype=np.float32), src_z1, mod_z2)
 
     return px_z[0]
+
 
 def _unflatten(l_flat, n_l):
     """
@@ -483,6 +511,7 @@ def _unflatten(l_flat, n_l):
     assert(offset == len(l_flat))
     return l
 
+
 def _join(z_by_seqs, seq2lab):
     d = defaultdict(list)
     for seq, z in list(z_by_seqs.items()):
@@ -491,3 +520,16 @@ def _join(z_by_seqs, seq2lab):
         d[lab] = np.concatenate(d[lab], axis=0)
     return list(d.keys()), list(d.values())
 
+
+def _join_talab(z_by_seqs, seq2talabseq, talab_vals):
+    d = defaultdict(list)
+    for seq, z in list(z_by_seqs.items()):
+        n_segs = z.shape[0]
+        seq_talabs = seq2talabseq[seq].talabs
+        for seg in range(n_segs):
+            idx = seq_talabs[seg].lab
+            talab = list(talab_vals.keys())[list(talab_vals.values()).index(idx)]
+            d[talab].append(z[seg, :])
+    for lab in d:
+        d[lab] = np.stack(d[lab], axis=0)
+    return list(d.keys()), list(d.values())

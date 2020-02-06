@@ -1,3 +1,4 @@
+from __future__ import division
 import os
 import sys
 import time
@@ -7,6 +8,7 @@ from collections import defaultdict
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 
 def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator):
     """
@@ -86,18 +88,20 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
         #checkpoint.save(file_prefix=checkpoint_prefix)
         manager.save()
 
-        #validation step
-        valid_loss = validation_step(model, dt_iterator, conf)
+        # validation step
+        valid_loss, normalloss = validation_step(model, dt_iterator, conf)
         valid_losses.append(valid_loss)
         with open(validloss_file, "a+") as fid:
-            fid.write('Validation loss of epoch {} is {:.4f} \n'.format(epoch, valid_loss))
+            fid.write('Validation loss of epoch {} is {:.4f}, and {:.4f} when calculated differently \n'.format(epoch, valid_loss, normalloss))
 
-        #early stopping
+        # early stopping
         best_epoch, best_valid_loss, is_finished = check_finished(conf, epoch, best_epoch, valid_loss, best_valid_loss)
         if is_finished:
+            with open(os.path.join(checkpoint_directory, 'best_checkpoint'), 'w+') as lid:
+                lid.write(best_epoch)
             break
 
-    print('Complete run over {} epochs with {} steps per epoch, took {} seconds\n'.format(conf['n_epochs'], conf['n_steps_per_epoch'], time.time()-start))
+    print('Complete run over {} epochs took {} seconds\n'.format(conf['n_epochs'], time.time()-start))
     print('Best run was in epoch {} with a validation loss of {} \n'.format(best_epoch, best_valid_loss))
 
     plt.figure('result-steploss')
@@ -120,6 +124,7 @@ def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss, flag):
     """
 
     with tf.GradientTape() as tape:
+
         mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits = model(x, y)
 
         loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss = \
@@ -135,16 +140,16 @@ def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss, flag):
     gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-    if flag:
+    if flag:  #print the variables once at the beginning of training
         for v in model.trainable_variables:
             print((v.name, v.shape))
         flag = False
-
 
     # update keras mean loss metric
     train_loss(loss)
 
     return loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss, flag
+
 
 #@tf.function
 def estimate_mu2_dict(model, iterator):
@@ -179,8 +184,9 @@ def validation_step(model, dt_iterator, conf):
     """
     calculate loss on development set
     """
-    validloss = 0
-    tot_segs = 0
+    validloss = 0.0
+    tot_segs = 0.0
+    normalloss = 0.0
 
     mu2_dict = estimate_mu2_dict(model, dt_iterator)
     mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
@@ -195,13 +201,14 @@ def validation_step(model, dt_iterator, conf):
         mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits = model(tf.stack(xval, axis=0), yval)
 
         loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss = \
-            model.compute_loss(xval, yval, nval, bval, cval, mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits,
+            model.compute_loss(tf.stack(xval, axis=0), yval, nval, bval, cval, mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits,
                                z2_rlogits)
 
         validloss += loss * len(xval)
         tot_segs += len(xval)
+        normalloss += loss
 
-    return validloss / tot_segs
+    return validloss / tot_segs, normalloss
 
 
 def check_finished(conf, epoch, best_epoch, val_loss, best_val_loss):
