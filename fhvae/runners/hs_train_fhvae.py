@@ -238,11 +238,13 @@ def check_finished(conf, epoch, best_epoch, val_loss, best_val_loss):
         best_epoch = epoch
         best_val_loss = val_loss
 
-    if (best_epoch - epoch) > conf['n_patience']:
+    if (int(best_epoch) - int(epoch)) > int(conf['n_patience']):
         is_finished = True
 
+    # training diverged
     if math.isnan(val_loss):
         is_finished = True
+        print("TRAINING DIVERGED!!!")
 
     return best_epoch, best_val_loss, is_finished
 
