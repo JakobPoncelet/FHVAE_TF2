@@ -1,11 +1,11 @@
 Universe = vanilla
 
 RequestCpus = 1
-RequestMemory = 10G
-+RequestWallTime = 100000
+RequestMemory = 15G
++RequestWallTime = 300000
 request_GPUs = 1
 
-Requirements = (CUDACapability >= 6.0)\
+Requirements = (CUDACapability >= 5.0)\
   &&(CUDAGlobalMemoryMb >= 5000)\
   &&(machine!="spchcl23.esat.kuleuven.be")\
   &&(machine!="spchcl24.esat.kuleuven.be")\
@@ -13,18 +13,23 @@ Requirements = (CUDACapability >= 6.0)\
   &&(machine!="blanche.esat.kuleuven.be")\
   &&(machine!="yperman.esat.kuleuven.be")\
   &&(machine!="bornholm.esat.kuleuven.be")\
-  &&(machine!="kiviuq.esat.kuleuven.be")
+  &&(machine!="kiviuq.esat.kuleuven.be")\
+  &&(machine!="spchcl18.esat.kuleuven.be")\
+  &&(machine!="spchcl19.esat.kuleuven.be")\
+  &&(machine!="spchcl21.esat.kuleuven.be")\
+  &&(machine!="spchcl17.esat.kuleuven.be")\
+  &&(machine!="estragon.esat.kuleuven.be")
 
 NiceUser = true
 initialdir = /users/spraak/jponcele/JakobFHVAE
 
 Executable = /esat/spchdisk/scratch/jponcele/anaconda3/envs/py3/bin/python
-Arguments = "scripts/train/run_hs_train.py --expdir $(expdir)"
+Arguments = "scripts/train/run_hs_train.py --expdir $(expdir) --config $(config)"
 
 Log          = $(expdir)/condor.log
 Output       = $(expdir)/condor.out
 Error        = $(expdir)/condor.err
 
-# usage: condor_submit jobfile.job expdir=/esat/spchdisk/scratch/jponcele/fhvae_jakob/exp
+# usage: condor_submit jobfile.job expdir=/esat/spchdisk/scratch/jponcele/fhvae_jakob/exp config=/users/spraak/jponcele/JakobFHVAE/config.cfg
 
 Queue

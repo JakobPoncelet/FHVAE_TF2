@@ -13,8 +13,9 @@ import tensorflow as tf
 from configparser import ConfigParser
 from collections import OrderedDict
 from scripts.test.eval_loaders import load_data_reg
-from fhvae.runners.test_fhvae_tf2 import test_reg
-from fhvae.models.reg_fhvae_tf2 import RegFHVAEnew
+from fhvae.runners.test_fhvae import test_reg
+from fhvae.models.reg_fhvae_lstm import RegFHVAEnew
+from fhvae.models.reg_fhvae_transf import RegFHVAEtransf
 
 '''
 Commands
@@ -33,8 +34,8 @@ def main(expdir):
 
     os.makedirs(os.path.join(expdir, 'test'), exist_ok=True)
     # read and copy the config file, change location if necessary
-    shutil.copyfile('./config.cfg', os.path.join(expdir, 'test', 'config.cfg'))
-    conf = load_config(os.path.join(expdir, 'test', 'config.cfg'))
+    # shutil.copyfile('./config.cfg', os.path.join(expdir, 'test', 'config.cfg'))
+    conf = load_config(os.path.join(expdir, 'config.cfg'))
     conf['expdir'] = expdir
 
     # load tr_shape and classes from training stage
@@ -43,13 +44,14 @@ def main(expdir):
     conf['tr_shape'] = trainconf['tr_shape']
     conf['lab2idx'] = trainconf['lab2idx']
 
+    # batch size is set to 2048, lower it when you have memory problems
     tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset = \
         load_data_reg(conf['dataset_test'], conf['set_name'], conf['fac_root'], conf['facs'], conf['talabs'])
 
     # identify regularizing factors
     used_labs = conf['facs'].split(':')
 
-    # When testing on new dataset, set this to HACK
+    # When testing on new dataset, set this to HACK  (EXPERIMENTAL, NOT TESTED !!)
     if conf['dataset_test'] == conf['dataset']:
         c_n = trainconf['c_n']
         b_n = trainconf['b_n']
@@ -58,12 +60,22 @@ def main(expdir):
         c_n = OrderedDict([(used_labs[0], 3), (used_labs[1], 9)])  # HACK
         b_n = c_n
 
-    # initialize the model
-    model = RegFHVAEnew(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], z1_rhus=conf['z1_rhus'], z2_rhus=conf['z2_rhus'], \
-                        x_rhus=conf['x_rhus'], nmu2=conf['nmu2'], z1_nlabs=b_n, z2_nlabs=c_n, \
-                        mu_nl=None, logvar_nl=None, tr_shape=conf['tr_shape'], alpha_dis=conf['alpha_dis'], \
-                        alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
 
+    # initialize the model
+    if conf['model'] == 'LSTM':
+        model = RegFHVAEnew(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], z1_rhus=conf['z1_rhus'], z2_rhus=conf['z2_rhus'], \
+                            x_rhus=conf['x_rhus'], nmu2=conf['nmu2'], z1_nlabs=b_n, z2_nlabs=c_n, \
+                            mu_nl=None, logvar_nl=None, tr_shape=conf['tr_shape'], bs=conf['batch_size'], \
+                            alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
+
+    if conf['model'] == 'transformer':
+        model = RegFHVAEtransf(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], nmu2=conf['nmu2'], x_rhus=conf['x_rhus'], \
+                            tr_shape=conf['tr_shape'], z1_nlabs=b_n, z2_nlabs=c_n, mu_nl=None, logvar_nl=None, \
+                            d_model=conf['d_model'], num_enc_layers=conf['num_enc_layers'], num_heads=conf['num_heads'], \
+                            dff=conf['dff'], pe_max_len=conf['pe_max_len'], rate=conf['rate'], \
+                            alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
+
+    #START
     test_reg(expdir, model, conf, tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset)
 
 
@@ -91,6 +103,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--expdir", type=str, default="./exp",
                         help="where to store the experiment")
+    parser.add_argument("--config", type=str, default="./config.cfg",
+                        help="configuration file to use for testing")
     args = parser.parse_args()
 
     if not os.path.isdir(args.expdir):

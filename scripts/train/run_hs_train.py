@@ -14,27 +14,33 @@ import shutil
 from collections import OrderedDict
 from configparser import ConfigParser
 from scripts.train.hs_train_loaders import load_data_reg
-from fhvae.runners.hs_train_fhvae_tf2 import hs_train_reg
-from fhvae.models.reg_fhvae_tf2 import RegFHVAEnew
+from fhvae.runners.hs_train_fhvae import hs_train_reg
+from fhvae.models.reg_fhvae_lstm import RegFHVAEnew
+from fhvae.models.reg_fhvae_transf import RegFHVAEtransf
 
 # For debugging on different GPU: os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
+# os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 '''
-Commands
+Commands (pycharm setup)
 Script path:
 /users/spraak/jponcele/JakobFHVAE/scripts/train/run_hs_train.py
 
 Parameters:
---expdir /esat/spchdisk/scratch/jponcele/fhvae_jakob/exp
+--expdir /esat/spchdisk/scratch/jponcele/fhvae_jakob/exp --config /users/spraak/jponcele/JakobFHVAE/configs/timit/config_lstm_complete.cfg
 Working directory:
 /users/spraak/jponcele/JakobFHVAE
 '''
 
-def main(expdir):
+def main(expdir, configfile):
     ''' main function '''
 
     # read and copy the config file, change location if necessary
-    shutil.copyfile('./config.cfg', os.path.join(expdir, 'config.cfg'))
+    if os.path.exists(os.path.join(expdir, 'config.cfg')):
+        print("Expdir already contains a config file... Overwriting!")
+        os.remove(os.path.join(expdir, 'config.cfg'))
+
+    shutil.copyfile(configfile, os.path.join(expdir, 'config.cfg'))
     conf = load_config(os.path.join(expdir, 'config.cfg'))
     conf['expdir'] = expdir
 
@@ -46,7 +52,7 @@ def main(expdir):
         exit(1)
     os.symlink(os.path.join(conf['datadir'], conf['dataset']), os.path.join("./datasets", conf['dataset']))
 
-    # set up the iterators over the dataset
+    # set up the iterators over the dataset (for large datasets this may take a while)
     tr_nseqs, tr_shape, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator, tr_dset = \
         load_data_reg(conf['dataset'], conf['fac_root'], conf['facs'], conf['talabs'])
 
@@ -60,7 +66,7 @@ def main(expdir):
     conf['talab_vals'] = tr_dset.talab_vals
     print("labels and indices of talabs: ", tr_dset.talab_vals)
 
-    # For now, apply talabs on z1 (e.g. phones) and labs on z2 (e.g. region, gender).
+    # For now, apply talabs on z1 (e.g. time-aligned phones) and labs on z2 (e.g. region, gender).
     # To switch, swap b_n/c_n in z_nlabs and b/c in _make_batch of hs_train_loaders
     # (will also require changes to eval script)
     c_n = OrderedDict([(lab, tr_dset.labs_d[lab].nclass) for lab in used_labs])
@@ -71,14 +77,22 @@ def main(expdir):
     conf['c_n'] = c_n
     conf['b_n'] = b_n
 
+    # dump settings
     with open(os.path.join(expdir, 'trainconf.pkl'), "wb") as fid:
         pickle.dump(conf, fid)
 
     # initialize the model
-    model = RegFHVAEnew(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], z1_rhus=conf['z1_rhus'], z2_rhus=conf['z2_rhus'], \
-                        x_rhus=conf['x_rhus'], nmu2=conf['nmu2'], z1_nlabs=b_n, z2_nlabs=c_n, \
-                        mu_nl=None, logvar_nl=None, tr_shape=tr_shape, alpha_dis=conf['alpha_dis'], \
-                        alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
+    if conf['model'] == 'LSTM':
+        model = RegFHVAEnew(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], z1_rhus=conf['z1_rhus'], z2_rhus=conf['z2_rhus'], \
+                            x_rhus=conf['x_rhus'], nmu2=conf['nmu2'], z1_nlabs=b_n, z2_nlabs=c_n, \
+                            mu_nl=None, logvar_nl=None, tr_shape=tr_shape, bs=conf['batch_size'], \
+                            alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
+    if conf['model'] == 'transformer':
+        model = RegFHVAEtransf(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], nmu2=conf['nmu2'], x_rhus=conf['x_rhus'], \
+                            tr_shape=tr_shape, z1_nlabs=b_n, z2_nlabs=c_n, mu_nl=None, logvar_nl=None, \
+                            d_model=conf['d_model'], num_enc_layers=conf['num_enc_layers'], num_heads=conf['num_heads'], \
+                            dff=conf['dff'], pe_max_len=conf['pe_max_len'], rate=conf['rate'], \
+                            alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
 
     # START
     hs_train_reg(expdir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator)
@@ -108,10 +122,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--expdir", type=str, default="./exp",
                         help="where to store the experiment")
+    parser.add_argument("--config", type=str, default="./config.cfg",
+                        help="config file for the experiment")
     args = parser.parse_args()
 
     if os.path.isdir(args.expdir):
         print("Expdir already exists")
     os.makedirs(args.expdir, exist_ok=True)
 
-    main(args.expdir)
+    main(args.expdir, args.config)
