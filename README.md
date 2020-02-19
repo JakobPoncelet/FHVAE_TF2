@@ -9,7 +9,8 @@ It is possible to use the LSTM model of the paper, or use a Transformer for the 
 Regularizations have been added to Z1 and to Z2, with a cross-entropy loss based on classification into labels. For now, sequence factors like gender, region and speaker recognition are added on Z2, and segmentspecific time-aligned labels ('talabs') like phones and phoneclass recognition are added on Z1.
 
 ## Supported datasets
-The TIMIT database can be fully replicated using the example script. CGN will be finalised later, but the example script is not finished yet.
+The TIMIT database can be fully replicated using the example script. 
+CGN also has a preparation script (of which some part has to run in Matlab), but convergence is still being tested for CGN.
 
 ## How to run
 It is advised to start with TIMIT and go through the code step by step.
