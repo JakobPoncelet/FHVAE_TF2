@@ -238,7 +238,7 @@ def check_finished(conf, epoch, best_epoch, val_loss, best_val_loss):
         best_epoch = epoch
         best_val_loss = val_loss
 
-    if (best_epoch - epoch) > conf['n_patience']:
+    if (epoch - best_epoch) > conf['n_patience']:
         is_finished = True
 
     if math.isnan(val_loss):
