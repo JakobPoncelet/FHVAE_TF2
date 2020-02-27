@@ -6,7 +6,7 @@ It is not verified yet if the code is 100% correct compared to the original code
 
 ## Model
 It is possible to use the LSTM model of the paper, or use a Transformer for the encoder (still quite experimental, results not convincing yet). 
-Regularizations have been added to Z1 and to Z2, with a cross-entropy loss based on classification into labels. For now, sequence factors like gender, region and speaker recognition are added on Z2, and segmentspecific time-aligned labels ('talabs') like phones and phoneclass recognition are added on Z1. Wav-files without labels are also allowed.
+Regularizations have been added to Z1 and to Z2, with a cross-entropy loss based on classification into labels. For now, sequence factors like gender, region and speaker recognition are added on Z2, and segmentspecific time-aligned labels ('talabs') like phones and phoneclass recognition are added on Z1. Wav-files without labels are also allowed (for training with unsupervised data).
 
 ## Supported datasets
 The TIMIT database can be fully replicated using the example script. 
