@@ -20,13 +20,13 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
     else:
         learning_rate = conf['lr']
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=conf['beta1'], beta_2=conf['beta2'], epsilon=conf['adam_eps'], amsgrad=False)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=conf['beta1'], beta_2=conf['beta2'], epsilon=conf['adam_eps'], amsgrad=True)
     train_loss = tf.keras.metrics.Mean(name='train_loss')
 
     checkpoint_directory = os.path.join(exp_dir, 'training_checkpoints')
     os.makedirs(checkpoint_directory, exist_ok=True)
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
-    manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_directory, max_to_keep=conf['n_patience']+1)
+    manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_directory, max_to_keep=conf['n_patience']+2)
 
     logdir = os.path.join(exp_dir, "logdir")
     os.makedirs(logdir, exist_ok=True)
@@ -107,7 +107,7 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
         best_epoch, best_valid_loss, is_finished = check_finished(conf, epoch, best_epoch, valid_loss, best_valid_loss)
         if is_finished:
             with open(os.path.join(checkpoint_directory, 'best_checkpoint'), 'w+') as lid:
-                lid.write(best_epoch)
+                lid.write(str(best_epoch))
             break
 
     print('Complete run over {} epochs took {} seconds\n'.format(conf['n_epochs'], time.time()-start))

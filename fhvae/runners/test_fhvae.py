@@ -58,7 +58,7 @@ def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_
                        xout_by_seq, xoutv_by_seq, z1reg_by_seq)
 
     print("\nVISUALIZING TSNE BY LABEL")
-    tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_dset)
+    tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_dset, bReg_by_seq)
 
     print("\nFINISHED\nResults stored in %s/test" % expdir)
 
@@ -134,6 +134,7 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
 
             # probabilities of each of the regularisation classes given mean(z1)
             z1_rlogits, z2_rlogits = model.regulariser(qz1_x[0], qz2_x[0])
+            # softmax over columns 1:end (skip first column of zeros with unlabeled data)
             z1reg_by_seq[seq] = list(map(_softmax, z1_rlogits))
             z2reg_by_seq[seq] = list(map(_softmax, z2_rlogits))
 
@@ -173,6 +174,7 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
 
         # probabilities given computed mu1
         z1_rlogits, _ = model.regulariser(z1, z2_by_seq[seq])
+        # softmax over columns 1:end, first column is for unlabeled data
         regpost_by_seq_z1[seq] = list(map(_softmax, z1_rlogits))
 
     # # save the mu2
@@ -213,10 +215,13 @@ def compute_pred_acc_z2(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z2re
         with open("%s/test/txt/%s_predictions.scp" % (expdir, name), "w") as f:
             f.write("#seq truelabel predictedlabel      for class %s \n" % name)
             for seq in seqs:
+                # when no or unknown label ""
+                if len(truelabs[seq]) == 0:
+                    continue
                 total += 1
                 probs = regpost_by_seq[seq][i]
-                # the predicted labels are shifted by one for some reason, empty label is now at end instead of start
-                pred_lab = ordered_labs[np.argmax(probs)]
+                # max + 1 since the first label in ordered_labs is the unknown label ""
+                pred_lab = ordered_labs[np.argmax(probs)+1]
                 if pred_lab == truelabs[seq]:
                     correct += 1
                 f.write(seq+" "+str(truelabs[seq])+" "+str(pred_lab)+"\n")
@@ -240,6 +245,7 @@ def compute_pred_acc_z2(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z2re
 def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1reg_by_seq, bReg_by_seq):
 
     names = conf['talabs'].split(':')
+    talab2idx = conf['train_talab_vals']
 
     accuracies = [0. for _ in range(len(names))]
 
@@ -254,15 +260,25 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
                 f.write('Sequence %s with %i segments \n' % (seq, nsegs))
 
                 for j in range(nsegs):
+                    truelab = bReg_by_seq[seq][j, i]
+
+                    truelab = list(talab2idx[name].keys())[list(talab2idx[name].values()).index(truelab)]
+
+                    # no or unknown label
+                    if len(truelab) == 0:
+                        continue
+
                     total += 1
 
-                    truelab = bReg_by_seq[seq][j, i]
-                    pred_lab = np.argmax(z1reg_by_seq[seq][i][j, :])
+                    # again + 1 because first label is the unknown label "" (not in z1reg)
+                    pred_lab = np.argmax(z1reg_by_seq[seq][i][j, :]) + 1
+
+                    pred_lab = list(talab2idx[name].keys())[list(talab2idx[name].values()).index(pred_lab)]
 
                     if pred_lab == truelab:
                         correct += 1
 
-                    f.write("\t %i \t %i \t %i \n" % (j, truelab, pred_lab))
+                    f.write("\t %i \t %s \t %s \n" % (j, str(truelab), str(pred_lab)))
 
         accuracies[i] = correct/total
         with open("%s/test/txt/%s_acc" % (expdir, name), "w") as fid:
@@ -382,7 +398,8 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
         scatter_plot(z2_tsne, seq_names, "z2_tsne_%03d" % p,
                      "%s/test/img/z2_tsne_%03d.png" % (expdir, p))
 
-def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, dt_dset):
+
+def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, dt_dset, bReg_by_seq):
 
     if len(seqs) > 25:
         seqs = sorted(list(np.random.choice(seqs, 25, replace=False)))
@@ -422,14 +439,21 @@ def tsne_by_label(expdir, model, conf, iterator_by_seqs, seqs, dt_dset):
                      "%s/test/img/tsne_by_label_z2_%s_%03d.png" % (expdir, gen_fac, p))
 
     for gen_talab, seq2talabseq in list(dt_dset.talabseqs_d.items()):
-        _talabs, _z1 = _join_talab(z1_tsne_by_seq, seq2talabseq.seq2talabseq, dt_dset.talab_vals[gen_talab])
+        idx = list(conf['b_n'].keys()).index(gen_talab)
+        _talabs, _z1 = _join_talab(z1_tsne_by_seq, bReg_by_seq, dt_dset.talab_vals[gen_talab], idx)
         scatter_plot(_z1, _talabs, gen_talab,
                      "%s/test/img/tsne_by_label_z1_%s_%03d.png" % (expdir, gen_talab, p))
 
     for gen_talab, seq2talabseq in list(dt_dset.talabseqs_d.items()):
-        _talabs, _z2 = _join_talab(z2_tsne_by_seq, seq2talabseq.seq2talabseq, dt_dset.talab_vals[gen_talab])
+        idx = list(conf['b_n'].keys()).index(gen_talab)
+        _talabs, _z2 = _join_talab(z2_tsne_by_seq, bReg_by_seq, dt_dset.talab_vals[gen_talab], idx)
         scatter_plot(_z2, _talabs, gen_talab,
                      "%s/test/img/tsne_by_label_z2_%s_%03d.png" % (expdir, gen_talab, p))
+
+    # for gen_talab, seq2talabseq in list(dt_dset.talabseqs_d.items()):
+    #     _talabs, _z2 = _join_talab(z2_tsne_by_seq, seq2talabseq.seq2talabseq, dt_dset.talab_vals[gen_talab])
+    #     scatter_plot(_z2, _talabs, gen_talab,
+    #                  "%s/test/img/tsne_by_label_z2_%s_%03d.png" % (expdir, gen_talab, p))
 
 
 def estimate_mu2_dict(model, conf, iterator):
@@ -480,9 +504,9 @@ def _print_mu2_stat(mu2_dict):
 
 def _softmax(x):
     ## First column are zeros (as added in fix_logits in model, so leave these out and return size-1 tens
-    #y = np.exp(x[:, 1:])
-    #return y / np.sum(y, axis=1, keepdims=True)
-    return tf.nn.softmax(x, axis=1)
+    y = np.exp(x[:, 1:])
+    return y / np.sum(y, axis=1, keepdims=True)
+    # return tf.nn.softmax(x, axis=1)
 
 
 def _seq_translate(model, tr_shape, src_z1, src_z2, del_mu2):
@@ -515,15 +539,31 @@ def _join(z_by_seqs, seq2lab):
     return list(d.keys()), list(d.values())
 
 
-def _join_talab(z_by_seqs, seq2talabseq, talab_vals):
+def _join_talab(z_by_seqs, xReg_by_seq, talab_vals, idx):
     d = defaultdict(list)
     for seq, z in list(z_by_seqs.items()):
         n_segs = z.shape[0]
-        seq_talabs = seq2talabseq[seq].talabs
+        xReg = xReg_by_seq[seq]
+
         for seg in range(n_segs):
-            idx = seq_talabs[seg].lab
-            talab = list(talab_vals.keys())[list(talab_vals.values()).index(idx)]
+            talab = xReg[seg, idx]
+            talab = list(talab_vals.keys())[list(talab_vals.values()).index(talab)]
             d[talab].append(z[seg, :])
     for lab in d:
         d[lab] = np.stack(d[lab], axis=0)
+
     return list(d.keys()), list(d.values())
+
+
+# def _join_talab(z_by_seqs, seq2talabseq, talab_vals):
+#     d = defaultdict(list)
+#     for seq, z in list(z_by_seqs.items()):
+#         n_segs = z.shape[0]
+#         seq_talabs = seq2talabseq[seq].talabs
+#         for seg in range(n_segs):
+#             idx = seq_talabs[seg].lab
+#             talab = list(talab_vals.keys())[list(talab_vals.values()).index(idx)]
+#             d[talab].append(z[seg, :])
+#     for lab in d:
+#         d[lab] = np.stack(d[lab], axis=0)
+#     return list(d.keys()), list(d.values())

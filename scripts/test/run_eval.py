@@ -17,6 +17,8 @@ from fhvae.runners.test_fhvae import test_reg
 from fhvae.models.reg_fhvae_lstm import RegFHVAEnew
 from fhvae.models.reg_fhvae_transf import RegFHVAEtransf
 
+# os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 '''
 Commands
 Script path:
@@ -43,10 +45,11 @@ def main(expdir):
         trainconf = pickle.load(fid)
     conf['tr_shape'] = trainconf['tr_shape']
     conf['lab2idx'] = trainconf['lab2idx']
+    conf['train_talab_vals'] = trainconf['talab_vals']
 
-    # batch size is set to 2048, lower it when you have memory problems
+    # lower the batch size when you have memory problems!
     tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset = \
-        load_data_reg(conf['dataset_test'], conf['set_name'], conf['fac_root'], conf['facs'], conf['talabs'])
+        load_data_reg(conf['dataset_test'], conf['set_name'], conf['fac_root'], conf['facs'], conf['talabs'], conf['train_talab_vals'])
 
     # identify regularizing factors
     used_labs = conf['facs'].split(':')
@@ -60,6 +63,8 @@ def main(expdir):
         c_n = OrderedDict([(used_labs[0], 3), (used_labs[1], 9)])  # HACK
         b_n = c_n
 
+    conf['b_n'] = b_n
+    conf['c_n'] = c_n
 
     # initialize the model
     if conf['model'] == 'LSTM':
@@ -102,9 +107,9 @@ if __name__ == '__main__':
     #parse the arguments
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--expdir", type=str, default="./exp",
-                        help="where to store the experiment")
+                        help="where to store the experiment (directory containing the trained model)")
     parser.add_argument("--config", type=str, default="./config.cfg",
-                        help="configuration file to use for testing")
+                        help="configuration file to use for testing (default is the one stored in expdir)")
     args = parser.parse_args()
 
     if not os.path.isdir(args.expdir):

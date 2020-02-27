@@ -60,9 +60,25 @@ def _load_reg(tr_dset, dt_dset):
         seq2idx = dict([(seq, i) for i, seq in enumerate(s_seqs)])
         lab_names = list(tr_dset.labs_d.keys())
         talab_names = list(tr_dset.talabseqs_d.keys())
+
+        ## If you want no spk detection but filter on spk
+        # if "spk" in tr_dset.labs_d:
+        #     s_seqs = tr_dset.seqlist
+        #     spklist = tr_dset.labs_d["spk"].lablist
+        #     seq2lab = tr_dset.labs_d["spk"].seq2lab
+        #     seq2idx = dict([(seq, spklist.index(seq2lab[seq])) for seq in s_seqs])
+        #     lab_names = tr_dset.labs_d.keys()
+        #     lab_names.remove("spk")
+
         ii = list()
         for k in s_seqs:
-            itm = [tr_dset.labs_d[name].lablist.index(tr_dset.labs_d[name].seq2lab[k]) for name in lab_names]
+            itm = []
+            for name in lab_names:
+                if k not in tr_dset.labs_d[name].seq2lab:  # unsupervised data without labels
+                    itm.append("")
+                else:
+                    itm.append(tr_dset.labs_d[name].lablist.index(tr_dset.labs_d[name].seq2lab[k]))
+            # itm = [tr_dset.labs_d[name].lablist.index(tr_dset.labs_d[name].seq2lab[k]) for name in lab_names]
             ii.append(np.asarray(itm))
         seq2regidx = dict(list(zip(s_seqs, ii)))
         _iterator = tr_dset.iterator(bs, seg_shuffle=True, seg_rem=seg_rem, seqs=s_seqs, lab_names=lab_names, talab_names=talab_names)
@@ -74,9 +90,20 @@ def _load_reg(tr_dset, dt_dset):
         seq2idx = dict([(seq, i) for i, seq in enumerate(dt_dset.seqlist)])
         lab_names = list(dt_dset.labs_d.keys())
         talab_names = list(dt_dset.talabseqs_d.keys())
+
+        # if "spk" in dt_dset.labs_d:
+        #     lab_names = dt_dset.labs_d.keys()
+        #     lab_names.remove("spk")
+
         ii = list()
         for k in dt_dset.seqlist:
-            itm = [dt_dset.labs_d[name].lablist.index(dt_dset.labs_d[name].seq2lab[k]) for name in lab_names]
+            itm = []
+            for name in lab_names:
+                if k not in dt_dset.labs_d[name].seq2lab:  # unsupervised data without labels
+                    itm.append("")
+                else:
+                    itm.append(dt_dset.labs_d[name].lablist.index(dt_dset.labs_d[name].seq2lab[k]))
+            # itm = [dt_dset.labs_d[name].lablist.index(dt_dset.labs_d[name].seq2lab[k]) for name in lab_names]
             ii.append(np.asarray(itm))
         seq2regidx = dict(list(zip(dt_dset.seqlist, ii)))
         _iterator = dt_dset.iterator(bs, seg_shuffle=False, seg_rem=True, seqs=dt_dset.seqlist, lab_names=lab_names, talab_names=talab_names)

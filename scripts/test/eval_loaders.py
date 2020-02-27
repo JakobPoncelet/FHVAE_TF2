@@ -5,7 +5,7 @@ from fhvae.datasets.seg_dataset import NumpySegmentDataset
 np.random.seed(123)
 
 
-def load_data_reg(name, set_name, seqlist_path=None, lab_names=None, talab_names=None):
+def load_data_reg(name, set_name, seqlist_path=None, lab_names=None, talab_names=None, train_talab_vals=None):
     root = "./datasets/%s" % name
     mvn_path = "%s/train/mvn.pkl" % root
     seg_len = 20  # 15
@@ -24,7 +24,7 @@ def load_data_reg(name, set_name, seqlist_path=None, lab_names=None, talab_names
         "%s/%s/feats.scp" % (root, set_name), "%s/%s/len.scp" % (root, set_name),
         lab_specs=lab_specs, talab_specs=talab_specs,
         min_len=seg_len, preload=False, mvn_path=mvn_path,
-        seg_len=seg_len, seg_shift=seg_len, rand_seg=False)
+        seg_len=seg_len, seg_shift=seg_len, rand_seg=False, copy_from=None, train_talabs=train_talab_vals)
 
     return _load_reg(tt_dset) + (tt_dset,)
 
@@ -44,7 +44,13 @@ def _load_reg(tt_dset):
         talab_names = list(tt_dset.talabseqs_d.keys())
         ii = list()
         for k in s_seqs:
-            itm = [tt_dset.labs_d[name].lablist.index(tt_dset.labs_d[name].seq2lab[k]) for name in lab_names]
+            itm = []
+            for name in lab_names:
+                if k not in tt_dset.labs_d[name].seq2lab:  # unsupervised data without labels
+                    itm.append("")
+                else:
+                    itm.append(tt_dset.labs_d[name].lablist.index(tt_dset.labs_d[name].seq2lab[k]))
+            #itm = [tt_dset.labs_d[name].lablist.index(tt_dset.labs_d[name].seq2lab[k]) for name in lab_names]
             ii.append(np.asarray(itm))
         seq2regidx = dict(list(zip(s_seqs, ii)))
         _iterator = tt_dset.iterator(bs, seg_shuffle=False, seg_rem=True, seqs=s_seqs, lab_names=lab_names,
@@ -58,7 +64,13 @@ def _load_reg(tt_dset):
         talab_names = list(tt_dset.talabseqs_d.keys())
         ii = list()
         for k in tt_dset.seqlist:
-            itm = [tt_dset.labs_d[name].lablist.index(tt_dset.labs_d[name].seq2lab[k]) for name in lab_names]
+            itm = []
+            for name in lab_names:
+                if k not in tt_dset.labs_d[name].seq2lab:  # unsupervised data without labels
+                    itm.append("")
+                else:
+                    itm.append(tt_dset.labs_d[name].lablist.index(tt_dset.labs_d[name].seq2lab[k]))
+            #itm = [tt_dset.labs_d[name].lablist.index(tt_dset.labs_d[name].seq2lab[k]) for name in lab_names]
             ii.append(np.asarray(itm))
         seq2regidx = dict(list(zip(tt_dset.seqlist, ii)))
         _iterator = tt_dset.iterator(bs, seg_shuffle=False, seg_rem=True, seqs=tt_dset.seqlist, lab_names=lab_names,

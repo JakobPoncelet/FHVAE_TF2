@@ -139,8 +139,8 @@ class SegmentDataset(object):
 
 class NumpySegmentDataset(SegmentDataset):
     def __init__(self, feat_scp, len_scp, lab_specs=[], talab_specs=[], min_len=1,
-                 preload=False, mvn_path=None, seg_len=20, seg_shift=8, rand_seg=False, copy_from=None):
+                 preload=False, mvn_path=None, seg_len=20, seg_shift=8, rand_seg=False, copy_from=None, train_talabs=None):
         seq_d = NumpyDataset(feat_scp, len_scp, lab_specs, talab_specs,
-                             min_len, preload, mvn_path, copy_from)
+                             min_len, preload, mvn_path, copy_from, train_talabs)
         super(NumpySegmentDataset, self).__init__(
             seq_d, seg_len, seg_shift, rand_seg)

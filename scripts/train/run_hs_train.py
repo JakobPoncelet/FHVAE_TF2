@@ -19,7 +19,7 @@ from fhvae.models.reg_fhvae_lstm import RegFHVAEnew
 from fhvae.models.reg_fhvae_transf import RegFHVAEtransf
 
 # For debugging on different GPU: os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
-# os.environ["CUDA_VISIBLE_DEVICES"]="1"
+# os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 '''
 Commands (pycharm setup)

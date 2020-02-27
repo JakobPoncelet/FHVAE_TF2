@@ -10,6 +10,8 @@ import argparse
 import subprocess
 from sphfile import SPHFile
 
+# os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 """
 # FIRST RUN ./misc/makewavs_CGN.m IN MATLAB TO GENERATE SMALLER AUDIO FILES FROM THE CGN DATABASE
 
@@ -21,7 +23,7 @@ components = 'afgklno'   (for example)
 
 NOTE: the matlab file can give an alarm for some wav files and doesnt store the phones for those files 
 [alarm = length(sam)/fs*100 < length(label)-1].
-In this script those wav files are filtered out (line 139), but might be better to change when working with unsupervised data.
+In this script those wav files are filtered out (line 139), but might be better to change when working with unsupervised data, i.e. add them to the files but empty factors.
 """
 
 componentslist = ["comp-a", "comp-f", "comp-g", "comp-k", "comp-l", "comp-n", "comp-o"]
@@ -60,6 +62,7 @@ with open(args.test_spk) as f:
 
 
 # compute regularizing factors
+# reg1=BirthRegion, reg2=ResRegion, res3=EducationRegion
 with open(args.factor_file) as f:
     speaker=[l.rstrip('\n').split(';')[0].lower() for l in f]
     f.seek(0)
@@ -127,6 +130,7 @@ tt_f = open(tt_scp, "w")
 paths = []
 bad_files = []
 cnt = 0
+
 for root, _, fnames in sorted(os.walk(args.cgn_dir)):
     regio = root.split("/")[-1].lower()  #nl/vl
     comp = root.split("/")[-2].lower()
@@ -137,11 +141,11 @@ for root, _, fnames in sorted(os.walk(args.cgn_dir)):
             spk = fname.split("_")[0].lower()
             spk_and_nr = fname.split(".")[0].lower()
 
-            # a wav file was made but no phones stored
-            if spk_and_nr not in fac_dict:
-                lookup = spk_and_nr+'_'+comp.split("-")[1]
-                bad_files.append(lookup)
-                continue
+            # # a wav file was made but no phones stored
+            # if spk_and_nr not in fac_dict:
+            #     lookup = spk_and_nr+'_'+comp.split("-")[1]
+            #     bad_files.append(lookup)
+            #     continue
 
             if spk in dt_spks:
                 f = dt_f
@@ -149,6 +153,7 @@ for root, _, fnames in sorted(os.walk(args.cgn_dir)):
                 f = tt_f
             else:
                 f = tr_f
+
             #path = "%s/%s/%s/%s" % (args.cgn_dir, comp, regio, fname)
             path = "%s/%s" % (root, fname)
             uttid = "%s_%s" % (spk_and_nr, comp.split("-")[1])
@@ -159,8 +164,8 @@ tr_f.close()
 dt_f.close()
 tt_f.close()
 
-print("wavs without phone talabs that are left out:   (%i out of %i)" % (len(bad_files), cnt))
-print(bad_files)
+# print("wavs without phone talabs that are left out:   (%i out of %i)" % (len(bad_files), cnt))
+# print(bad_files)
 
 print("converted to wav and dumped scp files")
 

@@ -284,8 +284,10 @@ class Regulariser(layers.Layer):
         self.z1_nlabs = z1_nlabs
         self.z2_nlabs = z2_nlabs
 
-        self.z1_nlabs_per_fac = list(self.z1_nlabs.values())
-        self.z2_nlabs_per_fac = list(self.z2_nlabs.values())
+        # subtract -1 for the unknown labels (unsupervised),
+        # these will get zero logits (see fix_logits below) and do not need to be mapped to by the FC layer
+        self.z1_nlabs_per_fac = [nlab - 1 for nlab in list(self.z1_nlabs.values())]
+        self.z2_nlabs_per_fac = [nlab - 1 for nlab in list(self.z2_nlabs.values())]
 
         # fully connected layers for every label
         self.reg_z1_fclayer = layers.Dense(
@@ -308,18 +310,18 @@ class Regulariser(layers.Layer):
         return z1_rlogits, z2_rlogits
 
     def fix_logits(self, all_rlogits, nlabs_per_fac):
-        # split, pad, concat and put in list all the logits
+        # split the logits for z1/z2 into the different factors
+        # e.g. rlogits = list(Tens(logits_gender), Tens(logits_region))
         rlogits = []
 
         for tens in tf.split(all_rlogits, nlabs_per_fac, 1):
-            #T = tf.shape(input=tens)[0]
-            #z = tf.zeros([T, 1], dtype=tf.float32)
-            ## add column of zeros at start
-            #rlogits.append(tf.concat((z, tens), axis=1))
-            rlogits.append(tens)
+            T = tf.shape(input=tens)[0]
+            z = tf.zeros([T, 1], dtype=tf.float32)
+            # add column of zeros at start for data with unknown labels ('' label always added at start)
+            rlogits.append(tf.concat((z, tens), axis=1))
+            # rlogits.append(tens)
 
         return rlogits
-
 
 #@tf.function
 def log_normal_pdf(x, mu=0., logvar=0., raxis=1):

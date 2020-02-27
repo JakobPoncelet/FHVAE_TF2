@@ -9,13 +9,13 @@ from scipy.stats import entropy
 from .audio_utils import *
 
 
-def scp2dict(path, dtype=str, seqlist=None):
+def scp2dict(path, dtype=str, seqlist=None, lab=False):
     with open(path) as f:
         # s = [line.rstrip() for line in f]
         l = [line.rstrip().split(None, 1) for line in f]
     d = OrderedDict([(k, dtype(v)) for k, v in l])
     if seqlist is not None:
-        d = subset_d(d, seqlist)
+            d = subset_d(d, seqlist, lab)
     return d
 
 
@@ -23,16 +23,16 @@ def scp2dict(path, dtype=str, seqlist=None):
 def load_lab(spec, seqlist=None, copy_from=None):
     if len(spec) == 3:
         name, nclass, path = spec
-        seq2lab = scp2dict(path, int, seqlist)
+        seq2lab = scp2dict(path, int, seqlist, lab=True)
     else:
         name, path = spec
-        seq2lab = scp2dict(path, str, seqlist)
+        seq2lab = scp2dict(path, str, seqlist, lab=True)
         # clean up unused or underrepresented labels
         if copy_from is None:
             u_lab = Counter(list(seq2lab.values()))
             # ignore classes ending in "X"
             for lab in list(u_lab.keys()):
-                if lab[-1].upper() == "X" or len(lab) == 0:
+                if len(lab) == 0 or lab[-1].upper() == "X":
                     del u_lab[lab]
             # ignore classes below frequency threshold
             ntot = sum(u_lab.values())
@@ -58,29 +58,44 @@ def load_lab(spec, seqlist=None, copy_from=None):
     return name, nclass, seq2lab
 
 
-def subset_d(d, l):
+def subset_d(d, l, lab=False):
     """
     retain keys in l. raise KeyError if some key is missed
+    + add "" if no label present
     """
     new_d = OrderedDict()
-    for k in l:
-        new_d[k] = d[k]
+
+    # if labels are not present (unsupervised), put the "" (unknown) label
+    if lab:
+        for k in l:
+            if k not in d:
+                new_d[k] = ""
+            else:
+                new_d[k] = d[k]
+    else:
+        # check for missing features
+        for k in l:
+            new_d[k] = d[k]
     return new_d
 
 
 # regularized version
-def load_talab(spec, seqlist=None, copy_from=None):
+def load_talab(spec, lens, seqlist=None, copy_from=None, train_talabs=None):
 
     if len(spec) == 3:
         name, nclass, path = spec
-        seq2lab = scp2dict(path, int, seqlist)
+        seq2lab = scp2dict(path, int, seqlist, lab=True)
     else:
         name, path = spec
 
     # keep dictionary with all labels and transform them to integers
-    talab_vals = OrderedDict()
-    talab_vals[""] = 0  # add empty label
-    talab_cnt = 1
+    if train_talabs == None:
+        talab_vals = OrderedDict()
+        talab_vals[""] = 0  # add empty label
+        talab_cnt = 1
+    else:
+        # in testing phase, keep the same numbering for the phones as during training
+        talab_vals = train_talabs[name]
 
     if copy_from == None:
         with open(path) as f:
@@ -90,7 +105,7 @@ def load_talab(spec, seqlist=None, copy_from=None):
         seq = toks_l[0][0]
         talabs = []
         for toks in toks_l[1:]:
-            if len(toks) == 1:
+            if len(toks) == 1:  # new utt
                 seq2talabseq[seq] = TimeAlignedLabelSeq(talabs)
                 seq = toks[0]
                 talabs = []
@@ -109,6 +124,15 @@ def load_talab(spec, seqlist=None, copy_from=None):
         seq2talabseq[seq] = TimeAlignedLabelSeq(talabs)
     else:
         seq2talabseq = copy_from.talabseqs_d[name].seq2talabseq
+        talab_vals = copy_from.talab_vals[name]
+
+
+    for seq in seqlist:
+        if seq not in seq2talabseq:
+            # no talabs for this seq -> put unknown "" label over entire length
+            talab = TimeAlignedLabel(0, 0, lens[seq]-1)
+            seq2talabseq[seq] = TimeAlignedLabelSeq([talab])
+
     alllab = set()
     for k in list(seq2talabseq.keys()):
         alllab.update(set(seq2talabseq[k].lablist))
@@ -272,7 +296,7 @@ class Labels(object):
 
 
 class SequenceDataset(object):
-    def __init__(self, feat_scp, len_scp, lab_specs=[], talab_specs=[], min_len=1, copy_from=None):
+    def __init__(self, feat_scp, len_scp, lab_specs=[], talab_specs=[], min_len=1, copy_from=None, train_talabs=None):
         """
         Args:
             feat_scp(str): feature scp path
@@ -305,7 +329,7 @@ class SequenceDataset(object):
         self.talabseqs_d = OrderedDict()
         self.talab_vals = OrderedDict()
         for talab_spec in talab_specs:
-            name, nclass, seq2talabs, talab_vals = load_talab(talab_spec, self.seqlist)
+            name, nclass, seq2talabs, talab_vals = load_talab(talab_spec, self.lens, self.seqlist, copy_from, train_talabs)
             self.talab_vals[name] = talab_vals
             self.talabseqs_d[name] = TimeAlignedLabelSeqs(name, nclass, seq2talabs)
 
@@ -358,9 +382,9 @@ class SequenceDataset(object):
 
 class NumpyDataset(SequenceDataset):
     def __init__(self, feat_scp, len_scp, lab_specs=[], talab_specs=[],
-                 min_len=1, preload=False, mvn_path=None, copy_from=None):
+                 min_len=1, preload=False, mvn_path=None, copy_from=None, train_talabs=None):
         super(NumpyDataset, self).__init__(
-            feat_scp, len_scp, lab_specs, talab_specs, min_len, copy_from)
+            feat_scp, len_scp, lab_specs, talab_specs, min_len, copy_from, train_talabs)
         if preload:
             feats = OrderedDict()
             for seq in self.seqlist:
