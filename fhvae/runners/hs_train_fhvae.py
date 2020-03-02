@@ -11,9 +11,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
-def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator):
+def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator, tr_dset):
     """
-    train fhvae with hierarchical sampling
+    train fhvae with or without hierarchical sampling
     """
     if conf['lr'] == 'custom':
         learning_rate = CustomSchedule(conf['d_model'], warmup_steps=conf['warmup_steps'])
@@ -50,34 +50,58 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
     if os.path.exists(validloss_file):
         os.remove(validloss_file)
 
-    flag = True
-
     best_epoch, best_valid_loss = 0, np.inf
     start = time.time()
+
+    flag = True
 
     for epoch in range(1, conf['n_epochs']+1):
         print("EPOCH %i\n" % epoch)
         epoch_start = time.time()
         train_loss.reset_states()
 
-        # new file every 50 epochs (becomes too large otherwise)
-        comploss_file = os.path.join(lossdir, 'result_comp_loss_%s.txt') % (str(int(epoch/50)))
+        # new file every 20 epochs (becomes too large otherwise)
+        comploss_file = os.path.join(lossdir, 'result_comp_loss_%s.txt') % (str(int(epoch/20)))
 
         # hierarchical sampling
-        s_seqs = sample_tr_seqs(conf['nmu2'])
+        if conf['training'] == 'hierarchical':
+            s_seqs = sample_tr_seqs(conf['nmu2'])
+        else:  # default, training = 'normal'
+            s_seqs = tr_dset.seqlist
         s_iterator = lambda: tr_iterator_by_seqs(s_seqs, bs=conf['batch_size'], seg_rem=True)
+
+
+        start_mu2 = time.time()
 
         # estimate and update mu2 lookup table
         mu2_dict = estimate_mu2_dict(model, s_iterator)
         mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
         model.mu2_table.assign(mu2_table)
+        print('calculating mu2_dict took {} seconds \n'.format(time.time()-start_mu2))
 
         # train loop over the samples from the dataset
         for xval, yval, nval, cval, bval in tr_iterator_by_seqs(s_seqs, bs=conf['batch_size']):
 
             # CORE TRAINING STEP
-            step_loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss, flag \
-                = train_step(model, tf.stack(tf.cast(xval, dtype=tf.float32), axis=0), yval, nval, bval, cval, optimizer, train_loss, flag, epoch)
+            step_loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss\
+                = train_step(model, tf.stack(tf.cast(xval, dtype=tf.float32), axis=0), yval, tf.cast(nval, dtype=tf.float32), bval, cval, optimizer, train_loss)
+
+            train_loss(step_loss)
+
+            # print the model variables (only once)
+            if flag:
+                for v in model.trainable_variables:
+                    print((v.name, v.shape))
+                flag = False
+
+            # print separate losses in terminal during first epochs for debugging purposes
+            if epoch < 3:
+                print("Loss: %f \t \t lb=%f \t log_qy=%f \t log_b=%f \t log_c=%f" % \
+                      (step_loss, -tf.reduce_mean(lb), -tf.reduce_mean(log_qy), -tf.reduce_mean(log_b_loss),
+                       -tf.reduce_mean(log_c_loss)))
+                print("\t lower bound components: \t log_pmu2=%f \t neg_kld_z2=%f \t neg_kld_z1=%f \t log_px_z=%f" % \
+                      (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1),
+                       -tf.reduce_mean(log_px_z)))
 
             # print the results to a file
             with open(comploss_file, "a+") as pid:
@@ -95,11 +119,13 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
 
         manager.save()
 
+        start_val = time.time()
+
         # validation step
         valid_loss, normalloss = validation_step(model, dt_iterator, conf)
 
         valid_losses.append(valid_loss)
-        print('Validation loss of epoch {} is {:.4f}, and {:.4f} when calculated differently \n'.format(epoch, valid_loss, normalloss))
+        print('Validation loss of epoch {} is {:.4f}, and {:.4f} when calculated differently, and took {} seconds \n'.format(epoch, valid_loss, normalloss, time.time()-start_val))
         with open(validloss_file, "a+") as fid:
             fid.write('Validation loss of epoch {} is {:.4f}, and {:.4f} when calculated differently \n'.format(epoch, valid_loss, normalloss))
 
@@ -127,12 +153,12 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
     plt.savefig(os.path.join(exp_dir, 'result_valid_loss.pdf'), format='pdf')
 
 
-#@tf.function
-def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss, flag, epoch):
+@tf.function()  # autograph=False
+def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss):
     """
     train fhvae step by step and compute the gradients from the losses
     """
-
+    print('tracing...')
     with tf.GradientTape() as tape:
 
         mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits = model(x, y)
@@ -144,26 +170,12 @@ def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss, flag, epoch):
     gradients = tape.gradient(loss, model.trainable_variables, unconnected_gradients=tf.UnconnectedGradients.NONE)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-    # print the variables once at the beginning of training
-    if flag:
-        for v in model.trainable_variables:
-            print((v.name, v.shape))
-        flag = False
-
-    # print separate losses in terminal during first epochs for debugging purposes
-    if epoch < 3:
-        print("Loss: %f \t \t lb=%f \t log_qy=%f \t log_b=%f \t log_c=%f" % \
-              (loss, -tf.reduce_mean(lb), -tf.reduce_mean(log_qy), -tf.reduce_mean(log_b_loss), -tf.reduce_mean(log_c_loss)))
-        print("\t lower bound components: \t log_pmu2=%f \t neg_kld_z2=%f \t neg_kld_z1=%f \t log_px_z=%f" % \
-              (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1), -tf.reduce_mean(log_px_z)))
-
     # update keras mean loss metric
     train_loss(loss)
 
-    return loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss, flag
+    return loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss
 
 
-#@tf.function
 def estimate_mu2_dict(model, iterator, bs=256, validation=False):
     """
     estimate mu2 for sequences produced by iterator
@@ -181,7 +193,8 @@ def estimate_mu2_dict(model, iterator, bs=256, validation=False):
 
     # calculate sum over all z2_mu's
     for x_val, y_val, _, _, _ in iterator(**kwargs):
-        z2_mu = model.encoder.z2_mu_separate(tf.stack(tf.cast(x_val, dtype=tf.float32), axis=0))
+        # z2_mu = model.encoder.z2_mu_separate(tf.stack(tf.cast(x_val, dtype=tf.float32), axis=0))
+        z2_mu = compute_z2_mu(tf.stack(tf.cast(x_val, dtype=tf.float32), axis=0), model)
 
         for idx, _y in enumerate(y_val):
             z2_sum_table[_y] += z2_mu[idx, :]
@@ -196,6 +209,13 @@ def estimate_mu2_dict(model, iterator, bs=256, validation=False):
         mu2_dict[_y] = z2_sum / (n+r)
 
     return mu2_dict
+
+
+@tf.function()  # autograph=False
+def compute_z2_mu(x, model):
+    print('tracing_mu2...')
+    z2_mu = model.encoder.z2_mu_separate(x)
+    return z2_mu
 
 
 def validation_step(model, dt_iterator, conf):
@@ -214,6 +234,7 @@ def validation_step(model, dt_iterator, conf):
     mu2_table = np.vstack((mu2_table, filler))
     model.mu2_table.assign(mu2_table)
 
+    # batch size can be *4 for example here
     for xval, yval, nval, cval, bval in dt_iterator(bs=conf['batch_size']):
 
         mu2, qz2_x, z2_sample, qz1_x, z1_sample, px_z, x_sample, z1_rlogits, z2_rlogits = model(tf.stack(tf.cast(xval, dtype=tf.float32), axis=0), yval)

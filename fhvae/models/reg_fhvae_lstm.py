@@ -244,6 +244,8 @@ class Decoder(layers.Layer):
     def call(self, x, z1, z2):
 
         bs, T = tf.shape(input=x)[0], tf.shape(input=x)[1]
+        T_int = x.get_shape().as_list()[1]  # get the integer value directly, to use in for-loop
+
 
         z1 = tf.tile(tf.expand_dims(z1, 1), (1, T, 1))
         z2 = tf.tile(tf.expand_dims(z2, 1), (1, T, 1))
@@ -256,7 +258,7 @@ class Decoder(layers.Layer):
         output = self.fullRNN_x(inputs=z1_z2, training=True)  #, initial_state=init_state)
 
         x_mu, x_logvar, x_sample = [], [], []
-        for timestep in range(0, T):
+        for timestep in range(0, int(T_int)):
             out_t = output[:, timestep, :]
             x_mu_t = self.xmu_fclayer(out_t)
             x_logvar_t = self.xlogvar_fclayer(out_t)

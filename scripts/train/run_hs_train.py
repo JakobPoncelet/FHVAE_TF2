@@ -77,6 +77,10 @@ def main(expdir, configfile):
     conf['c_n'] = c_n
     conf['b_n'] = b_n
 
+    # whether to train hierarchically on a random subset of nmu2 sequences in every epoch, or on all data every epoch
+    if conf['training'] != 'hierarchical':  # i.e. training = 'normal'
+        conf['nmu2'] = len(tr_dset.seqlist)
+
     # dump settings
     with open(os.path.join(expdir, 'trainconf.pkl'), "wb") as fid:
         pickle.dump(conf, fid)
@@ -95,7 +99,7 @@ def main(expdir, configfile):
                             alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
 
     # START
-    hs_train_reg(expdir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator)
+    hs_train_reg(expdir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_iterator, tr_dset)
 
 
 def load_config(conf):
