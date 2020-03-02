@@ -25,7 +25,7 @@ The expdir has to exist already:
 (For TIMIT: can take 2 days)
 
 ## Contact
-jakob.poncelet@esat.kuleuven.be
+jakob.poncelet[at]esat.kuleuven.be
 
 ## References
 Hsu, W. N., Zhang, Y., and Glass, J. Unsupervised learning of disentangled and interpretable representations from sequential data. In NIPS, 2017.
