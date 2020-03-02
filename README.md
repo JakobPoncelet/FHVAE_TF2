@@ -1,4 +1,4 @@
-# FHVAE_TF2_feb2020
+# FHVAE_TF2
 ## Implementation
 Implementation of Scalable Factorised Hierarchical Variational Autoencoder (https://github.com/wnhsu/ScalableFHVAE) in Tensorflow 2.0 and Python 3.6.8. The code is mainly written in Eager Execution mode of tensorflow 2.0 and does not use the @tf.function decorators yet.
 
