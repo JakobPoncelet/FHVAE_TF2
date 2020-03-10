@@ -60,22 +60,20 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
         epoch_start = time.time()
         train_loss.reset_states()
 
-        # new file every 20 epochs (becomes too large otherwise)
-        comploss_file = os.path.join(lossdir, 'result_comp_loss_%s.txt') % (str(int(epoch/20)))
+        comploss_file = os.path.join(lossdir, 'result_comp_loss.txt')
 
         # hierarchical sampling
         if conf['training'] == 'hierarchical':
             s_seqs = sample_tr_seqs(conf['nmu2'])
         else:  # default, training = 'normal'
             s_seqs = tr_dset.seqlist
-        s_iterator = lambda: tr_iterator_by_seqs(s_seqs, bs=conf['batch_size'], seg_rem=True)
-
+        s_iterator = tr_iterator_by_seqs(s_seqs, bs=conf['batch_size'], seg_rem=True)
 
         start_mu2 = time.time()
 
         # estimate and update mu2 lookup table
         mu2_dict = estimate_mu2_dict(model, s_iterator)
-        mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
+        mu2_table = np.array([np.array(mu2_dict[idx]) for idx in range(len(mu2_dict))])
         model.mu2_table.assign(mu2_table)
         print('calculating mu2_dict took {} seconds \n'.format(time.time()-start_mu2))
 
@@ -103,12 +101,19 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
                       (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1),
                        -tf.reduce_mean(log_px_z)))
 
-            # print the results to a file
-            with open(comploss_file, "a+") as pid:
-                pid.write("Loss: %f \t \t lb=%f \t log_qy=%f \t log_b=%f \t log_c=%f \n" % \
-                 (step_loss, -tf.reduce_mean(lb), -tf.reduce_mean(log_qy), -tf.reduce_mean(log_b_loss), -tf.reduce_mean(log_c_loss)))
-                pid.write("\t lower bound components: \t log_pmu2=%f \t neg_kld_z2=%f \t neg_kld_z1=%f \t log_px_z=%f \n" % \
-                 (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1), -tf.reduce_mean(log_px_z)))
+                # print the results to a file
+                with open(comploss_file, "a+") as pid:
+                    pid.write("Loss: %f \t \t lb=%f \t log_qy=%f \t log_b=%f \t log_c=%f \n" % \
+                     (step_loss, -tf.reduce_mean(lb), -tf.reduce_mean(log_qy), -tf.reduce_mean(log_b_loss), -tf.reduce_mean(log_c_loss)))
+                    pid.write("\t lower bound components: \t log_pmu2=%f \t neg_kld_z2=%f \t neg_kld_z1=%f \t log_px_z=%f \n" % \
+                     (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1), -tf.reduce_mean(log_px_z)))
+
+        with open(comploss_file, "a+") as pid:
+            pid.write("EPOCH: %i \n" % int(epoch))
+            pid.write("Loss: %f \t \t lb=%f \t log_qy=%f \t log_b=%f \t log_c=%f \n" % \
+             (step_loss, -tf.reduce_mean(lb), -tf.reduce_mean(log_qy), -tf.reduce_mean(log_b_loss), -tf.reduce_mean(log_c_loss)))
+            pid.write("\t lower bound components: \t log_pmu2=%f \t neg_kld_z2=%f \t neg_kld_z1=%f \t log_px_z=%f \n" % \
+             (-tf.reduce_mean(log_pmu2), -tf.reduce_mean(neg_kld_z2), -tf.reduce_mean(neg_kld_z1), -tf.reduce_mean(log_px_z)))
 
         print('Resulting mean-loss of epoch {} is {:.4f}, which took {} seconds to run'.format(epoch, train_loss.result(), time.time()-epoch_start))
         mean_losses.append(float(train_loss.result()))
@@ -131,9 +136,9 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
 
         # early stopping
         best_epoch, best_valid_loss, is_finished = check_finished(conf, epoch, best_epoch, valid_loss, best_valid_loss)
+        with open(os.path.join(checkpoint_directory, 'best_checkpoint'), 'w+') as lid:
+            lid.write(str(best_epoch))
         if is_finished:
-            with open(os.path.join(checkpoint_directory, 'best_checkpoint'), 'w+') as lid:
-                lid.write(str(best_epoch))
             break
 
     print('Complete run over {} epochs took {} seconds\n'.format(conf['n_epochs'], time.time()-start))
@@ -153,7 +158,7 @@ def hs_train_reg(exp_dir, model, conf, sample_tr_seqs, tr_iterator_by_seqs, dt_i
     plt.savefig(os.path.join(exp_dir, 'result_valid_loss.pdf'), format='pdf')
 
 
-@tf.function()  # autograph=False
+@tf.function()
 def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss):
     """
     train fhvae step by step and compute the gradients from the losses
@@ -176,7 +181,7 @@ def train_step(model, x, y, n, bReg, cReg, optimizer, train_loss):
     return loss, log_pmu2, neg_kld_z2, neg_kld_z1, log_px_z, lb, log_qy, log_b_loss, log_c_loss
 
 
-def estimate_mu2_dict(model, iterator, bs=256, validation=False):
+def estimate_mu2_dict(model, iterator):
     """
     estimate mu2 for sequences produced by iterator
     Args: model(FHVAE):
@@ -187,12 +192,8 @@ def estimate_mu2_dict(model, iterator, bs=256, validation=False):
     nseg_table = defaultdict(float)
     z2_sum_table = defaultdict(float)
 
-    kwargs = {}
-    if validation:
-        kwargs = {'bs':bs}
-
     # calculate sum over all z2_mu's
-    for x_val, y_val, _, _, _ in iterator(**kwargs):
+    for x_val, y_val, _, _, _ in iterator:
         # z2_mu = model.encoder.z2_mu_separate(tf.stack(tf.cast(x_val, dtype=tf.float32), axis=0))
         z2_mu = compute_z2_mu(tf.stack(tf.cast(x_val, dtype=tf.float32), axis=0), model)
 
@@ -211,7 +212,7 @@ def estimate_mu2_dict(model, iterator, bs=256, validation=False):
     return mu2_dict
 
 
-@tf.function()  # autograph=False
+@tf.function()
 def compute_z2_mu(x, model):
     print('tracing_mu2...')
     z2_mu = model.encoder.z2_mu_separate(x)
@@ -226,8 +227,8 @@ def validation_step(model, dt_iterator, conf):
     tot_segs = 0.0
     normalloss = 0.0
 
-    mu2_dict = estimate_mu2_dict(model, dt_iterator, bs=conf['batch_size'], validation=True)
-    mu2_table = np.array([mu2_dict[idx] for idx in range(len(mu2_dict))])
+    mu2_dict = estimate_mu2_dict(model, dt_iterator(bs=conf['batch_size']))
+    mu2_table = np.array([np.array(mu2_dict[idx]) for idx in range(len(mu2_dict))])
 
     # pad to size=nmu2 as initialized in model (however will not work if development set is larger than nmu2.....)
     filler = np.zeros(((int(conf['nmu2']) - mu2_table.shape[0]), mu2_table.shape[1]))

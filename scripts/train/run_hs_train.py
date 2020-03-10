@@ -19,7 +19,7 @@ from fhvae.models.reg_fhvae_lstm import RegFHVAEnew
 from fhvae.models.reg_fhvae_transf import RegFHVAEtransf
 
 # For debugging on different GPU: os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
-# os.environ["CUDA_VISIBLE_DEVICES"]="0"
+# os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 '''
 Commands (pycharm setup)
@@ -91,6 +91,7 @@ def main(expdir, configfile):
                             x_rhus=conf['x_rhus'], nmu2=conf['nmu2'], z1_nlabs=b_n, z2_nlabs=c_n, \
                             mu_nl=None, logvar_nl=None, tr_shape=tr_shape, bs=conf['batch_size'], \
                             alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
+
     if conf['model'] == 'transformer':
         model = RegFHVAEtransf(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], nmu2=conf['nmu2'], x_rhus=conf['x_rhus'], \
                             tr_shape=tr_shape, z1_nlabs=b_n, z2_nlabs=c_n, mu_nl=None, logvar_nl=None, \

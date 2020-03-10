@@ -15,29 +15,29 @@ class RegFHVAEnew(tf.keras.Model):
         self.tr_shape = tr_shape
         self.bs = bs
 
-        #encoder/decoder arch
+        # encoder/decoder arch
         self.z1_dim, self.z2_dim = z1_dim, z2_dim
         self.z1_rhus, self.z2_rhus = z1_rhus, z2_rhus
         self.x_rhus = x_rhus
 
-        #non linearities
+        # non linearities
         self.mu_nl, self.logvar_nl = mu_nl, logvar_nl
 
-        #nlabs = dictionary with for each label, the dimension of the regularization vector
+        # nlabs = dictionary with for each label, the dimension of the regularization vector
         self.z1_nlabs, self.z2_nlabs = z1_nlabs, z2_nlabs
         self.nmu2 = nmu2
         self.mu2_table = tf.Variable(tf.random.normal([nmu2, z2_dim], stddev=1.0))
 
-        #loss factors
+        # loss factors
         self.alpha_dis = alpha_dis
         self.alpha_reg_b, self.alpha_reg_c = alpha_reg_b, alpha_reg_c
 
-        #init net
+        # init net
         self.encoder = Encoder(self.z1_dim, self.z2_dim, self.z1_rhus, self.z2_rhus, self.tr_shape, self.mu_nl, self.logvar_nl)
         self.decoder = Decoder(self.x_rhus, self.tr_shape, self.mu_nl, self.logvar_nl)
         self.regulariser = Regulariser(self.z1_nlabs, self.z2_nlabs)
 
-        #log-prior stddevs
+        # log-prior stddevs
         self.pz1_stddev = 1.0
         self.pz2_stddev = 0.5
         self.pmu2_stddev = 1.0
@@ -114,18 +114,32 @@ class Encoder(layers.Layer):
         # RNN specs for z2_pre_encoder
         self.z2_rhus = z2_rhus
 
-        self.cells_z2 = [layers.LSTMCell(rhu) for rhu in self.z2_rhus]
-        self.cell_z2 = layers.StackedRNNCells(self.cells_z2)
-        # init_state= cell.get_initial_state(batch_size=tr_shape[0], dtype=x.dtype)
-        self.fullRNN_z2 = layers.RNN(self.cell_z2, return_state=True, time_major=False)
+        ## Unidirectional LSTMs
+        self.lstm_layer1_z2 = layers.LSTM(self.z2_rhus[0], return_sequences=True, return_state=True, time_major=False)
+        self.lstm_layer2_z2 = layers.LSTM(self.z2_rhus[1], return_state=True, time_major=False)
+
+        ## Bidirectional LSTMs
+        # self.lstm_layer1_z2 = layers.Bidirectional(layers.LSTM(self.z2_rhus[0], return_sequences=True, return_state=True, time_major=False), merge_mode='concat')
+        # self.lstm_layer2_z2 = layers.Bidirectional(layers.LSTM(self.z2_rhus[1], return_state=True, time_major=False), merge_mode='concat')
+
+        ## Bidirectional LSTMs with attention layer
+        # self.lstm_layer1_z2 = layers.Bidirectional(layers.LSTM(self.z2_rhus[0], return_sequences=True, time_major=False), merge_mode='concat')
+        # self.lstm_layer2_z2 = layers.Bidirectional(layers.LSTM(self.z2_rhus[1], return_sequences=True, time_major=False), merge_mode='concat')
+        # self.attn_fc_v = layers.Dense(512, use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros')
+        # self.attn_fc_q = layers.Dense(512, use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros')
+        # self.attn = layers.Attention(use_scale=True)
+        # self.query = tf.Variable(tf.random.normal([256, 1, 512], stddev=1.0), trainable=True)
 
         # RNN specs for z1_pre_encoder
         self.z1_rhus = z1_rhus
 
-        self.cells_z1 = [layers.LSTMCell(rhu) for rhu in self.z1_rhus]
-        self.cell_z1 = layers.StackedRNNCells(self.cells_z1)
-        # init_state = cell.get_initial_state(batch_size=bs, dtype=x.dtype)
-        self.fullRNN_z1 = layers.RNN(self.cell_z1, return_state=True, time_major=False)
+        ## Unidirectional LSTMs
+        self.lstm_layer1_z1 = layers.LSTM(self.z1_rhus[0], return_sequences=True, return_state=True, time_major=False)
+        self.lstm_layer2_z1 = layers.LSTM(self.z1_rhus[1], return_state=True, time_major=False)
+
+        ## Bidirectional LSTMs
+        # self.lstm_layer1_z1 = layers.Bidirectional(layers.LSTM(self.z1_rhus[0], return_sequences=True, return_state=True, time_major=False), merge_mode='concat')
+        # self.lstm_layer2_z1 = layers.Bidirectional(layers.LSTM(self.z1_rhus[1], return_state=True, time_major=False), merge_mode='concat')
 
 
         # fully connected layers for computation of mu and sigma
@@ -179,14 +193,26 @@ class Encoder(layers.Layer):
         Return:
             out(tf.Tensor): concatenation of hidden states of all LSTM layers
         """
-        outputs = self.fullRNN_z2(inputs=x, training=True)  #, initial_state=init_state)
+        ## Unidirectional LSTM
+        outputs1, final_memory_state1, final_carry_state1 = self.lstm_layer1_z2(inputs=x, training=True)
+        outputs2, final_memory_state2, final_carry_state2 = self.lstm_layer2_z2(inputs=outputs1, training=True)
+        out = tf.concat([final_memory_state1, final_memory_state2], axis=-1)
 
-        # if z2_rhus = [16,32] and bs = 256 and we use return_state=True, then outputs is a list containing:
-        # [ Tensor(256x32), [Tensor(256x16), Tensor(256x16)], [Tensor(256x32),Tensor(256x32)] ]
-        # and we concatenate the second one (=h, first one is cell state c) of both layers
-        out = [outputs[i+1][1] for i in range(len(self.z2_rhus))]  #range starts with 0 and stops before end
+        ## Bidirectional LSTM
+        # outputs1, forward_h1, forward_c1, backward_h1, backward_c1 = self.lstm_layer1_z2(inputs=x, training=True)
+        # outputs2, forward_h2, forward_c2, backward_h2, backward_c2 = self.lstm_layer2_z2(inputs=outputs1, training=True)
+        # out = tf.concat([forward_h1, backward_h1, forward_h2, backward_h2], axis=-1)
 
-        out = tf.concat(out, axis=-1)
+        ## Pyramidal Bidirectional LSTM with attention layer on output states (self attention with trainable query vector)
+        # outputs1 = self.lstm_layer1_z2(inputs=x, training=True)
+        # outputs2 = self.reshape_pyramidal(outputs1)
+        # outputs3 = self.lstm_layer2_z2(inputs=outputs2, training=True)
+        # value = self.attn_fc_v(outputs3)
+        # query = self.attn_fc_q(self.query)
+        # query = tf.slice(query, [0, 0, 0], [x.shape[0], -1, -1])
+        # out = self.attn(inputs=[query, value])
+        # out = tf.squeeze(out, axis=1)
+
         return out
 
     def z1_pre_encoder(self, x, z2):
@@ -203,12 +229,34 @@ class Encoder(layers.Layer):
         z2 = tf.tile(tf.expand_dims(z2, 1), (1, T, 1))
         x_z2 = tf.concat([x, z2], axis=-1)
 
-        # see z2_pre_encoder for details about RNN
-        outputs = self.fullRNN_z1(inputs=x_z2, training=True)  #, initial_state=init_state)
-        out = [outputs[i+1][1] for i in range(len(self.z2_rhus))]
-        out = tf.concat(out, axis=-1)
+        ## Unidirectional LSTMs
+        outputs1, final_memory_state1, final_carry_state1 = self.lstm_layer1_z1(inputs=x_z2, training=True)
+        outputs2, final_memory_state2, final_carry_state2 = self.lstm_layer2_z1(inputs=outputs1, training=True)
+        out = tf.concat([final_memory_state1, final_memory_state2], axis=-1)
+
+        ## Bidirectional LSTMs
+        # outputs1, forward_h1, forward_c1, backward_h1, backward_c1 = self.lstm_layer1_z1(inputs=x_z2, training=True)
+        # outputs2, forward_h2, forward_c2, backward_h2, backward_c2 = self.lstm_layer2_z1(inputs=outputs1, training=True)
+        # out = tf.concat([forward_h1, backward_h1, forward_h2, backward_h2], axis=-1)
 
         return out
+
+    def reshape_pyramidal(self, outputs):
+        """
+        Reshapes the given outputs, i.e. reduces the time resolution by 2
+        --> for Pyramidal BiLSTM like in "Listen, Attend and Spell" paper
+        e.g. (256x20x512) --> (256x10x1024)
+        """
+        # [batch_size, max_time, num_units]
+        shape = tf.shape(outputs)
+        batch_size, max_time = shape[0], shape[1]
+        num_units = outputs.get_shape().as_list()[-1]
+
+        pads = [[0, 0], [0, tf.math.floormod(max_time, 2)], [0, 0]]
+        outputs = tf.pad(outputs, pads)
+
+        concat_outputs = tf.reshape(outputs, (batch_size, -1, num_units * 2))
+        return concat_outputs
 
 
 class Decoder(layers.Layer):
@@ -225,11 +273,13 @@ class Decoder(layers.Layer):
         # RNN specs
         self.x_rhus = x_rhus
 
-        self.cells_x = [layers.LSTMCell(rhu) for rhu in self.x_rhus]
-        self.cell_x = layers.StackedRNNCells(self.cells_x)
-        #init_state = cell.get_initial_state(batch_size=bs, dtype=x.dtype)
-        self.fullRNN_x = layers.RNN(self.cell_x, return_sequences=True, time_major=False)
+        ## Unidirectional LSTMs
+        self.lstm_layer1_x = layers.LSTM(self.x_rhus[0], return_sequences=True, time_major=False)
+        self.lstm_layer2_x = layers.LSTM(self.x_rhus[1], return_sequences=True, time_major=False)
 
+        ## Bidirectional LSTMs
+        # self.lstm_layer1_x = layers.Bidirectional(layers.LSTM(self.x_rhus[0], return_sequences=True, time_major=False), merge_mode='concat')
+        # self.lstm_layer2_x = layers.Bidirectional(layers.LSTM(self.x_rhus[1], return_sequences=True, time_major=False), merge_mode='concat')
 
         # fully connected layers for computing mu and logvar
         self.xmu_fclayer = layers.Dense(
@@ -251,11 +301,9 @@ class Decoder(layers.Layer):
         z2 = tf.tile(tf.expand_dims(z2, 1), (1, T, 1))
         z1_z2 = tf.concat([z1, z2], axis=-1)
 
-        # return_sequences=True returns the entire sequence of outputs for each sample
-        # (one vector per timestep per sample)
-        # shape of output is (batch_size, timesteps, units)
-        # so this is what we need: the output of the RNN for every timestep
-        output = self.fullRNN_x(inputs=z1_z2, training=True)  #, initial_state=init_state)
+        # Uni or bidirectional LSTMs (same calls here)
+        outputs1 = self.lstm_layer1_x(inputs=z1_z2, training=True)
+        output = self.lstm_layer2_x(inputs=outputs1, training=True)
 
         x_mu, x_logvar, x_sample = [], [], []
         for timestep in range(0, int(T_int)):
@@ -296,7 +344,6 @@ class Regulariser(layers.Layer):
             sum(self.z1_nlabs_per_fac), activation=None, use_bias=True,
             kernel_initializer='glorot_uniform', bias_initializer='zeros')
 
-        # sum minus 1?
         self.reg_z2_fclayer = layers.Dense(
             sum(self.z2_nlabs_per_fac), activation=None, use_bias=True,
             kernel_initializer='glorot_uniform', bias_initializer='zeros')

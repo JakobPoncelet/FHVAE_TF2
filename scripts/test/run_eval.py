@@ -66,6 +66,10 @@ def main(expdir):
     conf['b_n'] = b_n
     conf['c_n'] = c_n
 
+    # if we did not use the hierarchical sampling during training, the mu2table will be larger than nmu2 in the config
+    if 'nmu2' in trainconf:
+        conf['nmu2'] = trainconf['nmu2']
+
     # initialize the model
     if conf['model'] == 'LSTM':
         model = RegFHVAEnew(z1_dim=conf['z1_dim'], z2_dim=conf['z2_dim'], z1_rhus=conf['z1_rhus'], z2_rhus=conf['z2_rhus'], \
