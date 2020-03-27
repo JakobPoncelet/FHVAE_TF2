@@ -7,6 +7,19 @@ sys.path.insert(0, os.getcwd())
 import time
 import argparse
 import tensorflow as tf
+##
+gpus = tf.config.experimental.list_physical_devices('GPU')
+# for gpu in gpus
+if gpus:
+    gpu = gpus[0]
+    try:
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+        tf.config.experimental.set_memory_growth(gpu, enable=True)
+        # break
+    except RuntimeError as e:
+        print(e)
+        pass
+##
 import numpy as np
 import pickle
 import ast
