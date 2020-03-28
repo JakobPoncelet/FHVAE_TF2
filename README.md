@@ -13,7 +13,7 @@ CGN also has a preparation script (of which some part has to run in Matlab).
 ## Installation
 
 ### Requirements
-Please make sure you are running Python 3.6.8.
+Please make sure you are running Python 3.6.
 
 ```bash
 pip install --upgrade pip
@@ -46,7 +46,8 @@ The expdir has to exist already:
 ```bash
 condor_submit jobfile.job expdir=... config=...   
 ```
-For TIMIT training can take up to 2 days.
+For TIMIT training can take up to 2 days.  
+CGN training can take up to 4 days, depending on the components chosen.
 
 ## Contact
 jakob.poncelet@esat.kuleuven.be
