@@ -5,16 +5,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%SETUP%%%
 indir='/users/spraak/spchdata/cgn/CDdata/CGN_V2.0_tst_ann/data/annot/text/awd/';
-cgndir='/users/spraak/spchdata/cgn/wav/';
+cgndir='/users/students/r0797363/spchdisk/data/cgn_raw_wav/';
 
 %outdir='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_afgklno/wav/';
 %talabfile='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_afgklno/fac/all_facs_phones.scp';
 %components='afgklno';
 
 % make an empty 'wav' and 'fac' directory first
-outdir='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_ko/wav/';
-talabfile='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_ko/fac/all_facs_phones.scp';
-components='ko';
+outdir='/users/students/r0797363/spchdisk/data/cgn_nl/wav/';
+talabfile='/users/students/r0797363/spchdisk/data/cgn_nl/fac/all_facs_phones.scp';
+components='afgklno';
+lang = 'nl'
+% outdir='/users/students/r0797363/spchdisk/data/cgn_np_fbank_afgklno/wav/';
+% talabfile='/users/students/r0797363/spchdisk/data/cgn_np_fbank_afgklno/fac/all_facs_phones.scp';
+% components='afgklno';
+% lang = 'nl'
 
 
 pho={'[]','sil','p','t','k','b','d','g','f','v','s','z','S','Z','x','G',...
@@ -26,7 +31,7 @@ TargetLength = 2000; % target length of cut wav files, in frames of 10ms
 
 tafid=fopen(talabfile,'wb');
 for comp=1:length(components)
-seldir=['comp-' components(comp) '/vl/'];
+seldir=['comp-' components(comp) '/' lang '/'];
 unix(['mkdir -p ' outdir seldir]);
 if ismember(components(comp),{'f','l'}) suff='_A0'; else suff=''; end;
 
@@ -35,6 +40,7 @@ for k=1:length(files)
   fprintf('\n%s %d/%d: %s - ',components(comp),k,length(files),files(k).name);
   gunzip(fullfile(files(k).folder,files(k).name),'.');
   fileid=files(k).name(1:end-7);
+  disp([cgndir seldir fileid suff '.wav'])
   if ~exist([cgndir seldir fileid suff '.wav'],'file') continue;end
   [sam,fs]=audioread([cgndir seldir fileid suff '.wav']);
   if fs~=16000 error('sample freq'); end
@@ -132,16 +138,19 @@ for k=1:length(files)
     for kkk=2:length(cutpoints)
         frames=rng(cutpoints(kkk-1)+1:cutpoints(kkk));
         thisspeaker=sam(dbl_pnt([fs/100*frames+1;fs/100*(frames+1)]));
-        while exist(sprintf(wavfname,instance),'file') instance=instance+1;end
-        audiowrite(sprintf(wavfname,instance),thisspeaker,fs);
-        if alarm fprintf('%d ',instance);end
-        fprintf(tafid,[spkid{spk} '_%d_%s\n'],instance,components(comp));
-        t0=endpoints(jj)-frq(jj);
-        while (jj<=length(endpoints)) & (endpoints(jj)<=cutpoints(kkk))
-            fprintf(tafid,'%d %d %d\n',endpoints(jj)-frq(jj)-t0,endpoints(jj)-t0,it(jj));
-            jj=jj+1;
+        if ~isempty(thisspeaker)  
+            while exist(sprintf(wavfname,instance),'file') instance=instance+1;end
+            audiowrite(sprintf(wavfname,instance),thisspeaker,fs);
+            if alarm fprintf('%d ',instance);end
+            fprintf(tafid,[spkid{spk} '_%d_%s\n'],instance,components(comp));
+            t0=endpoints(jj)-frq(jj);
+            while (jj<=length(endpoints)) & (endpoints(jj)<=cutpoints(kkk))
+                fprintf(tafid,'%d %d %d\n',endpoints(jj)-frq(jj)-t0,endpoints(jj)-t0,it(jj));
+                jj=jj+1;
+            end
+            instance=instance+1; 
         end
-        instance=instance+1;    end
+    end
   end
   delete *.awd
 end

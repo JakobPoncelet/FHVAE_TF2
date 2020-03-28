@@ -1,6 +1,6 @@
 # FHVAE_TF2
-## Implementation
-Implementation of Scalable Factorised Hierarchical Variational Autoencoder (https://github.com/wnhsu/ScalableFHVAE) in Tensorflow 2.0 and Python 3.6.8. It is not verified yet if the code is 100% correct compared to the original code!!
+Implementation of Scalable Factorised Hierarchical Variational Autoencoder (https://github.com/wnhsu/ScalableFHVAE) in Tensorflow 2.0 and Python 3.6.8.   
+**Important notice:** It is not verified yet if the code is 100% correct compared to the original code!!
 
 ## Model
 It is possible to use the LSTM model of the paper, or use a Transformer for the encoder (still quite experimental, results not convincing yet). 
@@ -10,20 +10,46 @@ Regularizations have been added to Z1 and to Z2, with a cross-entropy loss based
 The TIMIT database can be fully replicated using the example script. 
 CGN also has a preparation script (of which some part has to run in Matlab).
 
-## How to run
+## Installation
+
+### Requirements
+Please make sure you are running Python 3.6.8.
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Getting started
+
 It is advised to start with TIMIT and go through the code step by step.
-1) Preprocessing examples --> prepare_timit  (this will set up your database and create all necessary files)
-2) Change the template config.cfg file to your needs or use one in the configs-directory.
-3) Scripts/train --> python run_hs_train.py --expdir=... --config=...
-4) Scripts/test --> python run_eval.py --expdir=...
+
+#### 1. Preprocessing
+```
+python preprocessing_examples/prepare_timit_numpy.py <data> <doc> --ftype ... --out_dir ...
+```
+This will set up your database and create all files needed for training.
+
+#### 2. Training
+Make sure `expdir` exists. For the hyperparameter setup, you can modify the template `config.cfg` file or use one in the configs-directory.
+```bash
+python scripts/train/run_hs_train.py --expdir=... --config=...
+```
+
+#### 3. Evaluation
+```bash
+python scripts/test/run_eval.py --expdir=...
+```
 
 ## Running training on Condor
-The expdir has to exist already: 
-     condor_submit jobfile.job expdir=... config=... 
-(For TIMIT: can take 2 days)
+The expdir has to exist already:   
+```bash
+condor_submit jobfile.job expdir=... config=...   
+```
+For TIMIT training can take up to 2 days.
 
 ## Contact
-jakob.poncelet[at]esat.kuleuven.be
+jakob.poncelet@esat.kuleuven.be
 
 ## References
 Hsu, W. N., Zhang, Y., and Glass, J. Unsupervised learning of disentangled and interpretable representations from sequential data. In NIPS, 2017.

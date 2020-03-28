@@ -1,6 +1,9 @@
-# Customs 
+### Repository specific ### 
 exp
 *.job
+datasets
+
+###---------------------###
 
 
 # Created by https://www.gitignore.io
