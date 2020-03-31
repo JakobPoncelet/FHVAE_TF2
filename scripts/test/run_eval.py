@@ -10,6 +10,19 @@ import shutil
 import pickle
 import ast
 import tensorflow as tf
+##
+gpus = tf.config.experimental.list_physical_devices('GPU')
+# for gpu in gpus
+if gpus:
+    gpu = gpus[0]
+    try:
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+        tf.config.experimental.set_memory_growth(gpu, enable=True)
+        # break
+    except RuntimeError as e:
+        print(e)
+        pass
+##
 from configparser import ConfigParser
 from collections import OrderedDict
 from scripts.test.eval_loaders import load_data_reg
