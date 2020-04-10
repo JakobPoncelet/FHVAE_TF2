@@ -4,6 +4,7 @@ import sys
 import time
 import pickle
 import numpy as np
+import json
 from collections import defaultdict
 import matplotlib
 matplotlib.use("Agg")
@@ -12,9 +13,10 @@ import tensorflow as tf
 from .plotter import plot_x, scatter_plot
 
 
+
 np.random.seed(123)
 
-def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_dset):
+def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_dset, dump_only=False):
     '''
     Compute variational lower bound
     '''
@@ -37,31 +39,40 @@ def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_
     status.assert_existing_objects_matched()
     #status.assert_consumed()
 
-    os.makedirs(os.path.join(expdir, conf['set_name'], 'img', 'x_tra'), exist_ok=True)
-    os.makedirs(os.path.join(expdir, conf['set_name'], 'spec'), exist_ok=True)
+    os.makedirs(os.path.join(expdir, conf['set_name'], 'mu1'), exist_ok=True)
+    os.makedirs(os.path.join(expdir, conf['set_name'], 'mu2'), exist_ok=True)
     os.makedirs(os.path.join(expdir, conf['set_name'], 'txt'), exist_ok=True)
-    os.makedirs(os.path.join(expdir, conf['set_name'], 'z1'), exist_ok=True)
-    os.makedirs(os.path.join(expdir, conf['set_name'], 'z2'), exist_ok=True)
 
     print("\nCOMPUTING AVERAGE VALUES")
-    # avg_loss, avg_vals = compute_average_values(model, dt_iterator, conf)
+    avg_loss, avg_vals = compute_average_values(model, dt_iterator, conf)
 
     print("\nCOMPUTING VALUES BY SEQUENCE")
     z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1, \
         z2reg_by_seq, bReg_by_seq, cReg_by_seq = compute_values_by_seq(model, conf, dt_iterator_by_seqs, dt_seqs, expdir)
 
-    print("\nCOMPUTING PREDICTION ACCURACIES FOR LABELS FROM Z2")
-    labels, accs = compute_pred_acc_z2(expdir, model, conf, dt_seqs, dt_dset, regpost_by_seq, z2reg_by_seq, cReg_by_seq)
+    print("\nCOMPUTING CLUSTER ANALYSIS")
+    compute_cluster_analysis(expdir, conf, dt_seqs, dt_dset, mu2_by_seq)
 
-    print("\nCOMPUTING PREDICTION ACCURACIES FOR TIME ALIGNED LABELS FROM Z1")
-    labels, accs = compute_pred_acc_z1(expdir, model, conf, dt_seqs, dt_dset, regpost_by_seq, z1reg_by_seq, bReg_by_seq)
+    if not dump_only:
+        os.makedirs(os.path.join(expdir, conf['set_name'], 'wav'), exist_ok=True)
+        os.makedirs(os.path.join(expdir, conf['set_name'], 'img', 'x_tra'), exist_ok=True)
+        os.makedirs(os.path.join(expdir, conf['set_name'], 'spec', 'tra_lab'), exist_ok=True)
+        os.makedirs(os.path.join(expdir, conf['set_name'], 'spec', 'tra_spk'), exist_ok=True)
+        os.makedirs(os.path.join(expdir, conf['set_name'], 'spec', 'xin_xout'), exist_ok=True)
+        os.makedirs(os.path.join(expdir, conf['set_name'], 'spec', 'neu'), exist_ok=True)
 
-    print("\nVISUALIZING RESULTS")
-    visualize_reg_vals(expdir, model, dt_seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, \
-                       xout_by_seq, xoutv_by_seq, z1reg_by_seq, dt_dset)
+        print("\nCOMPUTING PREDICTION ACCURACIES FOR LABELS FROM Z2")
+        labels, accs = compute_pred_acc_z2(expdir, model, conf, dt_seqs, dt_dset, regpost_by_seq, z2reg_by_seq, cReg_by_seq)
 
-    print("\nVISUALIZING TSNE BY LABEL")
-    tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_dset, bReg_by_seq)
+        print("\nCOMPUTING PREDICTION ACCURACIES FOR TIME ALIGNED LABELS FROM Z1")
+        labels, accs = compute_pred_acc_z1(expdir, model, conf, dt_seqs, dt_dset, regpost_by_seq, z1reg_by_seq, bReg_by_seq)
+
+        print("\nVISUALIZING RESULTS")
+        visualize_reg_vals(expdir, model, dt_seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, \
+                        xout_by_seq, xoutv_by_seq, z1reg_by_seq, dt_dset)
+
+        print("\nVISUALIZING TSNE BY LABEL")
+        tsne_by_label(expdir, model, conf, dt_iterator_by_seqs, dt_seqs, dt_dset, bReg_by_seq)
 
     print("\nFINISHED\nResults stored in %s/%s" % (expdir, conf['set_name']))
 
@@ -162,28 +173,29 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         mu2_by_seq[seq] = z2_sum / (n+r)
 
         d2 = mu2_by_seq[seq].shape[0]
-        z2 = np.asarray(mu2_by_seq[seq]).reshape([1, d2])
+        mu_z2 = np.asarray(mu2_by_seq[seq]).reshape([1, d2])
 
         # probabilities of each of the regularisation classes given the computed z2 of above
-        _, z2_rlogits = model.regulariser(z1_by_seq[seq], z2)
+        _, z2_rlogits = model.regulariser(z1_by_seq[seq], mu_z2)
         regpost_by_seq[seq] = list(map(_softmax, z2_rlogits))
 
         # formula for inferring alternative S-vector mu1 during testing, paper p7
         z1_sum = np.sum(z1_by_seq[seq], axis=0)
         n = len(z1_by_seq[seq])
         r = np.exp(model.pz1_stddev ** 2)
-        z1 = z1_sum / (n+r)
-        z1 = np.asarray(z1).reshape([1, z1.shape[0]])
+        mu_z1 = z1_sum / (n+r)
+        mu_z1 = np.asarray(mu_z1).reshape([1, mu_z1.shape[0]])
 
         # probabilities given computed mu1
-        z1_rlogits, _ = model.regulariser(z1, z2_by_seq[seq])
+        z1_rlogits, _ = model.regulariser(mu_z1, z2_by_seq[seq])
         # softmax over columns 1:end, first column is for unlabeled data
         regpost_by_seq_z1[seq] = list(map(_softmax, z1_rlogits))
 
-        with open(os.path.join(expdir, conf['set_name'], 'z1', '%s.npy' % seq), 'wb') as f:
-            np.save(f, z1_by_seq[seq])
-        with open(os.path.join(expdir, conf['set_name'], 'z2', '%s.npy' % seq), 'wb') as f:
-            np.save(f, z2_by_seq[seq])
+        # Dump the logits for classification
+        with open(os.path.join(expdir, conf['set_name'], 'mu1', '%s.npy' % seq), 'wb') as f:
+            np.save(f, mu_z1)
+        with open(os.path.join(expdir, conf['set_name'], 'mu2', '%s.npy' % seq), 'wb') as f:
+            np.save(f, mu_z2)
 
     # # save the mu2
     # with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.txt'),"w"):
@@ -295,6 +307,42 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
 
     return names, accuracies
 
+def compute_cluster_analysis(expdir, conf, seqs, dt_dset, mu2_by_seq):
+    # Calculate intra cluster variance
+    names = conf['facs'].split(':')
+    if 'spk' not in names:
+        names.append('spk')
+    lab2idx= conf['lab2idx']
+    variances = dict()
+    for name in names:
+        variances[name] = dict()
+        samples_by_lab = dict()
+        for seq in seqs:
+            if name == 'spk':
+                lab = seq.split('_')[0]
+            else:
+                lab = dt_dset.labs_d[name].seq2lab[seq]
+            if lab != "":
+                if lab not in samples_by_lab:
+                    samples_by_lab[lab] = [mu2_by_seq[seq]]
+                else:
+                    samples_by_lab[lab].append(mu2_by_seq[seq])
+
+        for lab in samples_by_lab.keys():
+            samples_by_lab[lab] = np.array(samples_by_lab[lab])
+            variances[name][lab] = variance(samples_by_lab[lab])
+        variances[name]['_mean'] = np.mean(list(variances[name].values()))  
+    all_mu2s = np.array(list(mu2_by_seq.values()))
+    variances['_global variance'] = variance(all_mu2s)
+
+    with open('%s/%s/txt/intra_cluster_variance.json' % (expdir, conf['set_name']), 'w+') as f:
+        json.dump(variances, f, sort_keys=True, indent=4)
+    
+
+def variance(x):
+    print(x.shape)
+    return np.square(x - x.mean(axis=0)).sum(axis=1).mean().astype(float)
+
 
 def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, dt_dset):
 
@@ -339,9 +387,15 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
                 mu2_by_lab[name][lab] = mu2_by_lab[name][lab] / lab_count[lab] # compute mean
             
                 
-
-    print("only using 5 random sequences for visualization")
-    seqs = sorted(list(np.random.choice(seqs, 5, replace=False)))
+    if conf['cherrypick']:
+        print('Using sequences in "%s" for visualization' % conf['cherrypick'])
+        seqs = []
+        with open(conf['cherrypick']) as f:
+            for line in f:
+                seqs.append(line.split()[0].strip())
+    else:
+        print("only using 5 random sequences for visualization")
+        seqs = sorted(list(np.random.choice(seqs, 5, replace=False)))
     seq_names = ["%02d_%s" % (i, seq) for i, seq in enumerate(seqs)]
 
     if True:
@@ -371,9 +425,9 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
             mvn_params = pickle.load(f)
         nb_mel = mvn_params["mean"].size
         for src_seq, src_seq_name in zip(seqs, seq_names):
-            with open("%s/%s/spec/xin_%s.npy" % (expdir, conf['set_name'], src_seq), "wb") as fnp:
+            with open("%s/%s/spec/xin_xout/xin_%s.npy" % (expdir, conf['set_name'], src_seq), "wb") as fnp:
                 np.save(fnp, np.reshape(xin_by_seq[src_seq], (-1, nb_mel)) * mvn_params["std"] + mvn_params["mean"])
-            with open("%s/%s/spec/xout_%s.npy" % (expdir, conf['set_name'], src_seq), "wb") as fnp:
+            with open("%s/%s/spec/xin_xout/xout_%s.npy" % (expdir, conf['set_name'], src_seq), "wb") as fnp:
                 np.save(fnp,
                         np.reshape(xout_by_seq[src_seq], (-1, nb_mel)) * mvn_params["std"] + mvn_params["mean"])
 
@@ -388,7 +442,7 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
             src_z1, src_z2 = z1_by_seq[src_seq], z2_by_seq[src_seq]
             neu_by_seq[src_seq] = _seq_translate(
                 model, conf['tr_shape'], src_z1, src_z2, del_mu2)
-            with open("%s/%s/spec/neu_%s.npy" % (expdir, conf['set_name'], src_seq), "wb") as fnp:
+            with open("%s/%s/spec/neu/neu_%s.npy" % (expdir, conf['set_name'], src_seq), "wb") as fnp:
                 np.save(fnp, np.reshape(neu_by_seq[src_seq], (-1, nb_mel)) * mvn_params["std"] + mvn_params["mean"])
 
         plot_x([neu_by_seq[seq] for seq in seqs], seq_names,
@@ -405,12 +459,26 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
                 del_mu2 = mu2_by_seq[tar_seq] - mu2_by_seq[src_seq]
                 xtra_by_seq[src_seq][tar_seq] = _seq_translate(
                     model, conf['tr_shape'], src_z1, src_z2, del_mu2)
-                with open("%s/%s/spec/src_%s_tar_%s.npy" % (expdir, conf['set_name'], src_seq, tar_seq), "wb") as fnp:
+                with open("%s/%s/spec/tra_spk/src_%s_tar_%s.npy" % (expdir, conf['set_name'], src_seq, tar_seq), "wb") as fnp:
                     np.save(fnp, np.reshape(xtra_by_seq[src_seq][tar_seq], (-1, nb_mel)) * mvn_params["std"] +
                             mvn_params["mean"])
 
             plot_x([xtra_by_seq[src_seq][seq] for seq in seqs], seq_names,
                    "%s/%s/img/x_tra/%s_tra.png" % (expdir, conf['set_name'], src_seq_name), True)
+
+        # Write html file for easier comparison
+        with open("%s/%s/wav/index.html" % (expdir, conf['set_name']), "w+") as file:
+            file.write(r'<html>\n<head>\n<style>table{margin:auto}audio{width:150px;display:block;}td.diag{background:pink}</style>\n</head>\n<body>\n<table>\n')
+            for src_seq in seqs:
+                file.write('<tr>\n')
+                for tar_seq in seqs:
+                    if src_seq == tar_seq:
+                        file.write('<td class="diag">\n')
+                    else:
+                        file.write('<td>')
+                    file.write('<audio controls src="src_%s_tar_%s.wav"></audio></td>\n' % (src_seq, tar_seq) )
+                file.write('</tr>\n')
+            file.write('</table>\n</body>\n</html>\n')
 
     if True:
         # label shift
@@ -428,10 +496,9 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
                     del_mu2 = mu2_by_lab[name][tar_lab] - mu2_by_lab[name][src_lab]
                     x_tra = _seq_translate(
                         model, conf['tr_shape'], src_z1, src_z2, del_mu2)
-                    with open("%s/%s/spec/%s_%s_src_%s_tar_%s.npy" % (expdir, conf['set_name'], src_seq, name, src_lab, tar_lab), "wb") as fnp:
+                    with open("%s/%s/spec/tra_lab/%s_%s_src_%s_tar_%s.npy" % (expdir, conf['set_name'], src_seq, name, src_lab, tar_lab), "wb") as fnp:
                         np.save(fnp, np.reshape(x_tra, (-1, nb_mel)) * mvn_params["std"] +
                                 mvn_params["mean"])
-
 
     if True:
         # tsne z1 and z2
