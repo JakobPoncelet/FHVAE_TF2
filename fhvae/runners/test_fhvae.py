@@ -197,7 +197,14 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         with open(os.path.join(expdir, conf['set_name'], 'mu2', '%s.npy' % seq), 'wb') as f:
             np.save(f, mu_z2)
 
-    # # save the mu2
+
+        with open("%s/%s/txt/reconstruction_MSE.txt"%(expdir, conf['set_name']), 'w') as f:
+            mse = 0.
+            for seq in seqs:
+                mse += np.square(np.array(xin_by_seq[seq]) - np.array(xout_by_seq[seq])).mean()
+            f.write(str(mse/len(seqs)))
+            
+                # # save the mu2
     # with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.txt'),"w"):
     #     for seq in seqs:
     #         f.write( ' '.join (map(str,mu2_by_seq[seq])) )
@@ -468,7 +475,7 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
 
         # Write html file for easier comparison
         with open("%s/%s/wav/index.html" % (expdir, conf['set_name']), "w+") as file:
-            file.write(r'<html>\n<head>\n<style>table{margin:auto}audio{width:150px;display:block;}td.diag{background:pink}</style>\n</head>\n<body>\n<table>\n')
+            file.write(r'<html><head><style>table{margin:auto}audio{width:150px;display:block;}td.diag{background:pink}</style></head><body><table>')
             for src_seq in seqs:
                 file.write('<tr>\n')
                 for tar_seq in seqs:
