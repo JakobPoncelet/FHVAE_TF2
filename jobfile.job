@@ -7,6 +7,7 @@ request_GPUs = 1
 
 Requirements = (CUDACapability >= 5.0)\
   &&(CUDAGlobalMemoryMb >= 5000)\
+  &&(Has_avx)\
   &&(machine!="spchcl23.esat.kuleuven.be")\
   &&(machine!="spchcl24.esat.kuleuven.be")\
   &&(machine!="molder.esat.kuleuven.be")\
