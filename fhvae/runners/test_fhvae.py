@@ -198,11 +198,12 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
             np.save(f, mu_z2)
 
 
-        with open("%s/%s/txt/reconstruction_MSE.txt"%(expdir, conf['set_name']), 'w') as f:
-            mse = 0.
-            for seq in seqs:
-                mse += np.square(np.array(xin_by_seq[seq]) - np.array(xout_by_seq[seq])).mean()
-            f.write(str(mse/len(seqs)))
+    with open("%s/%s/txt/reconstruction_MSE.txt"%(expdir, conf['set_name']), 'w') as f:
+        mse = 0.
+        for seq in seqs:
+            mse += np.square(np.array(xin_by_seq[seq]) - np.array(xout_by_seq[seq])).mean()
+        print('reconstruction MSE: {:2f}'.format(mse/len(seqs)))
+        f.write(str(mse/len(seqs)))
             
                 # # save the mu2
     # with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.txt'),"w"):
@@ -347,7 +348,6 @@ def compute_cluster_analysis(expdir, conf, seqs, dt_dset, mu2_by_seq):
     
 
 def variance(x):
-    print(x.shape)
     return np.square(x - x.mean(axis=0)).sum(axis=1).mean().astype(float)
 
 
