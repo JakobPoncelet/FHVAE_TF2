@@ -128,7 +128,7 @@ if __name__ == '__main__':
                         help="where to store the experiment (directory containing the trained model)")
     parser.add_argument("--config", type=str, default="./config.cfg",
                         help="configuration file to use for testing (default is the one stored in expdir)")
-    parser.add_argument("--dump", action='store_true')
+    parser.add_argument("--dump", action='store_true', help="dump all mu-values of dev, train, test sets (default: False)")
     args = parser.parse_args()
 
     if not os.path.isdir(args.expdir):

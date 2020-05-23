@@ -37,8 +37,6 @@ def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_
     status.assert_existing_objects_matched()
     #status.assert_consumed()
 
-    os.makedirs(os.path.join(expdir, conf['set_name'], 'mu1'), exist_ok=True)
-    os.makedirs(os.path.join(expdir, conf['set_name'], 'mu2'), exist_ok=True)
     os.makedirs(os.path.join(expdir, conf['set_name'], 'txt'), exist_ok=True)
 
     print("\nCOMPUTING AVERAGE VALUES")
@@ -115,10 +113,10 @@ def compute_average_values(model, dt_iterator, conf):
 
 
 def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
-
     z1_by_seq = defaultdict(list)
     z2_by_seq = defaultdict(list)
     mu2_by_seq = dict()
+    mu1_by_seq = dict()
     regpost_by_seq = dict()
     xin_by_seq = defaultdict(list)
     xout_by_seq = defaultdict(list)
@@ -168,13 +166,11 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         z2_sum = np.sum(z2_by_seq[seq], axis=0)
         n = len(z2_by_seq[seq])
         r = np.exp(model.pz2_stddev ** 2) / np.exp(model.pmu2_stddev ** 2)
-        mu2_by_seq[seq] = z2_sum / (n+r)
-
-        d2 = mu2_by_seq[seq].shape[0]
-        mu2 = np.asarray(mu2_by_seq[seq]).reshape([1, d2])
+        mu2 = z2_sum / (n+r)
+        mu2_by_seq[seq] = np.asarray(mu2).reshape([1, mu2.shape[0]])
 
         # probabilities of each of the regularisation classes given the computed z2 of above
-        _, z2_rlogits = model.regulariser(z1_by_seq[seq], mu2)
+        _, z2_rlogits = model.regulariser(z1_by_seq[seq], mu2_by_seq[seq])
         regpost_by_seq[seq] = list(map(_softmax, z2_rlogits))
 
         # formula for inferring alternative S-vector mu1 during testing, paper p7
@@ -182,18 +178,12 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         n = len(z1_by_seq[seq])
         r = np.exp(model.pz1_stddev ** 2)
         mu1 = z1_sum / (n+r)
-        mu1 = np.asarray(mu1).reshape([1, mu1.shape[0]])
+        mu1_by_seq[seq] = np.asarray(mu1).reshape([1, mu1.shape[0]])
 
         # probabilities given computed mu1
-        z1_rlogits, _ = model.regulariser(mu1, z2_by_seq[seq])
+        z1_rlogits, _ = model.regulariser(mu1_by_seq[seq], z2_by_seq[seq])
         # softmax over columns 1:end, first column is for unlabeled data
         regpost_by_seq_z1[seq] = list(map(_softmax, z1_rlogits))
-
-        # Dump the logits for classification
-        # with open(os.path.join(expdir, conf['set_name'], 'mu1', '%s.npy' % seq), 'wb') as f:
-        #     np.save(f, mu1)
-        # with open(os.path.join(expdir, conf['set_name'], 'mu2', '%s.npy' % seq), 'wb') as f:
-        #     np.save(f, mu2)
 
     # Calculate reconstruction MSE
     with open("%s/%s/txt/reconstruction_MSE.txt"%(expdir, conf['set_name']), 'w') as f:
@@ -203,20 +193,21 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         print('reconstruction MSE: {:2f}'.format(mse/len(seqs)))
         f.write(str(mse/len(seqs)))
             
-    # # save the mu2
-    # with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.txt'),"w"):
-    #     for seq in seqs:
-    #         f.write( ' '.join (map(str,mu2_by_seq[seq])) )
-    #         f.write('\n')
+    # save the estimated mu2 dictionary
+    with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.pkl'), 'wb') as f:
+        pickle.dump(mu2_by_seq, f)
 
-    # save the mean mu2
-    if not os.path.exists(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.npy')):
+    # save the alternative S-vectors (mu1) dictionary
+    with open(os.path.join(expdir, conf['set_name'], 'mu1_by_seq.pkl'), 'wb') as f:
+        pickle.dump(mu1_by_seq, f)
+
+    if not os.path.exists(os.path.join(expdir, 'test', 'neutral_mu2.npy')):
         mumu = np.zeros([mu2_by_seq[seqs[1]].size])
         for seq in seqs:
-            mumu += mu2_by_seq[seq]
+            mumu += mu2_by_seq[seq].flatten()
         mumu /= len(seqs)
-        with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.npy'), "wb") as fnp:
-            np.save(fnp, mumu)
+        with open(os.path.join(expdir, 'test', 'neutral_mu2.npy'), "wb") as fnp:
+            np.save(fnp, mumu)    
 
     return z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, regpost_by_seq_z1, z2reg_by_seq, bReg_by_seq, cReg_by_seq
 
@@ -314,7 +305,7 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
     return names, accuracies
 
 def compute_cluster_analysis(expdir, conf, seqs, dt_dset, mu2_by_seq):
-    # Calculate intra cluster variance for each label
+    ''' Calculate intra-cluster variance for each label '''
     names = conf['facs'].split(':')
     if 'spk' not in names:
         names.append('spk')
@@ -333,18 +324,17 @@ def compute_cluster_analysis(expdir, conf, seqs, dt_dset, mu2_by_seq):
                     samples_by_lab[lab] = [mu2_by_seq[seq]]
                 else:
                     samples_by_lab[lab].append(mu2_by_seq[seq])
-
         for lab in samples_by_lab.keys():
             samples_by_lab[lab] = np.array(samples_by_lab[lab])
-            variances[name][lab] = variance(samples_by_lab[lab])
+            variances[name][lab] = _variance(samples_by_lab[lab])
         variances[name]['_mean'] = np.mean(list(variances[name].values()))  
     all_mu2s = np.array(list(mu2_by_seq.values()))
-    variances['_global variance'] = variance(all_mu2s)
+    variances['_global variance'] = _variance(all_mu2s)
 
     with open('%s/%s/txt/intra_cluster_variance.json' % (expdir, conf['set_name']), 'w+') as f:
         json.dump(variances, f, sort_keys=True, indent=4)
 
-def variance(x):
+def _variance(x):
     return np.square(x - x.mean(axis=0)).sum(axis=1).mean().astype(float)
 
 def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, dt_dset):
@@ -438,7 +428,7 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
         # sequence neutralisation
         print("visualizing neutral sequences")
         neu_by_seq = dict()
-        with open("%s/%s/mu2_by_seq.npy" % (expdir, conf['set_name']), "rb") as fnp:
+        with open("%s/%s/neutral_mu2.npy" % (expdir, conf['set_name']), "rb") as fnp:
             mumu = np.float32(np.load(fnp))
         for src_seq, src_seq_name in zip(seqs, seq_names):
             del_mu2 = mumu - mu2_by_seq[src_seq]
