@@ -12,8 +12,6 @@ from sklearn.manifold import TSNE
 import tensorflow as tf
 from .plotter import plot_x, scatter_plot
 
-
-
 np.random.seed(123)
 
 def test_reg(expdir, model, conf, dt_iterator, dt_iterator_by_seqs, dt_seqs, dt_dset, dump_only=False):
@@ -173,31 +171,31 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         mu2_by_seq[seq] = z2_sum / (n+r)
 
         d2 = mu2_by_seq[seq].shape[0]
-        mu_z2 = np.asarray(mu2_by_seq[seq]).reshape([1, d2])
+        mu2 = np.asarray(mu2_by_seq[seq]).reshape([1, d2])
 
         # probabilities of each of the regularisation classes given the computed z2 of above
-        _, z2_rlogits = model.regulariser(z1_by_seq[seq], mu_z2)
+        _, z2_rlogits = model.regulariser(z1_by_seq[seq], mu2)
         regpost_by_seq[seq] = list(map(_softmax, z2_rlogits))
 
         # formula for inferring alternative S-vector mu1 during testing, paper p7
         z1_sum = np.sum(z1_by_seq[seq], axis=0)
         n = len(z1_by_seq[seq])
         r = np.exp(model.pz1_stddev ** 2)
-        mu_z1 = z1_sum / (n+r)
-        mu_z1 = np.asarray(mu_z1).reshape([1, mu_z1.shape[0]])
+        mu1 = z1_sum / (n+r)
+        mu1 = np.asarray(mu1).reshape([1, mu1.shape[0]])
 
         # probabilities given computed mu1
-        z1_rlogits, _ = model.regulariser(mu_z1, z2_by_seq[seq])
+        z1_rlogits, _ = model.regulariser(mu1, z2_by_seq[seq])
         # softmax over columns 1:end, first column is for unlabeled data
         regpost_by_seq_z1[seq] = list(map(_softmax, z1_rlogits))
 
         # Dump the logits for classification
-        with open(os.path.join(expdir, conf['set_name'], 'mu1', '%s.npy' % seq), 'wb') as f:
-            np.save(f, mu_z1)
-        with open(os.path.join(expdir, conf['set_name'], 'mu2', '%s.npy' % seq), 'wb') as f:
-            np.save(f, mu_z2)
+        # with open(os.path.join(expdir, conf['set_name'], 'mu1', '%s.npy' % seq), 'wb') as f:
+        #     np.save(f, mu1)
+        # with open(os.path.join(expdir, conf['set_name'], 'mu2', '%s.npy' % seq), 'wb') as f:
+        #     np.save(f, mu2)
 
-
+    # Calculate reconstruction MSE
     with open("%s/%s/txt/reconstruction_MSE.txt"%(expdir, conf['set_name']), 'w') as f:
         mse = 0.
         for seq in seqs:
@@ -205,7 +203,7 @@ def compute_values_by_seq(model, conf, iterator_by_seqs, seqs, expdir):
         print('reconstruction MSE: {:2f}'.format(mse/len(seqs)))
         f.write(str(mse/len(seqs)))
             
-                # # save the mu2
+    # # save the mu2
     # with open(os.path.join(expdir, conf['set_name'], 'mu2_by_seq.txt'),"w"):
     #     for seq in seqs:
     #         f.write( ' '.join (map(str,mu2_by_seq[seq])) )
@@ -316,7 +314,7 @@ def compute_pred_acc_z1(expdir, model, conf, seqs, dt_dset, regpost_by_seq, z1re
     return names, accuracies
 
 def compute_cluster_analysis(expdir, conf, seqs, dt_dset, mu2_by_seq):
-    # Calculate intra cluster variance
+    # Calculate intra cluster variance for each label
     names = conf['facs'].split(':')
     if 'spk' not in names:
         names.append('spk')
@@ -345,11 +343,9 @@ def compute_cluster_analysis(expdir, conf, seqs, dt_dset, mu2_by_seq):
 
     with open('%s/%s/txt/intra_cluster_variance.json' % (expdir, conf['set_name']), 'w+') as f:
         json.dump(variances, f, sort_keys=True, indent=4)
-    
 
 def variance(x):
     return np.square(x - x.mean(axis=0)).sum(axis=1).mean().astype(float)
-
 
 def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_seq, regpost_by_seq, xin_by_seq, xout_by_seq, xoutv_by_seq, z1reg_by_seq, dt_dset):
 
@@ -401,7 +397,7 @@ def visualize_reg_vals(expdir, model, seqs, conf, z1_by_seq, z2_by_seq, mu2_by_s
             for line in f:
                 seqs.append(line.split()[0].strip())
     else:
-        print("only using 5 random sequences for visualization")
+        print("No cherrypick file provided. Using 5 random sequences for visualization")
         seqs = sorted(list(np.random.choice(seqs, 5, replace=False)))
     seq_names = ["%02d_%s" % (i, seq) for i, seq in enumerate(seqs)]
 
