@@ -27,3 +27,5 @@ jakob.poncelet[at]esat.kuleuven.be
 
 ## References
 Hsu, W. N., Zhang, Y., and Glass, J. Unsupervised learning of disentangled and interpretable representations from sequential data. In NIPS, 2017.
+
+Hsu, W. N. and Glass, J. Scalable factorized hierarchical variational autoencoder training. In Interspeech, 2018.
