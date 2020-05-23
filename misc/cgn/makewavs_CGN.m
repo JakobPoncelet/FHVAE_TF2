@@ -5,21 +5,17 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%SETUP%%%
 indir='/users/spraak/spchdata/cgn/CDdata/CGN_V2.0_tst_ann/data/annot/text/awd/';
-cgndir='/users/students/r0797363/spchdisk/data/cgn_raw_wav/';
+cgndir='/users/spraak/spchdata/cgn/wav/';
 
 %outdir='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_afgklno/wav/';
 %talabfile='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_afgklno/fac/all_facs_phones.scp';
 %components='afgklno';
 
 % make an empty 'wav' and 'fac' directory first
-outdir='/users/students/r0797363/spchdisk/data/cgn_nl/wav/';
-talabfile='/users/students/r0797363/spchdisk/data/cgn_nl/fac/all_facs_phones.scp';
-components='afgklno';
+outdir='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_ko/wav/';
+talabfile='/esat/spchdisk/scratch/jponcele/fhvae_jakob/datasets/cgn_np_fbank_ko/fac/all_facs_phones.scp';
+components='ko';
 lang = 'nl'
-% outdir='/users/students/r0797363/spchdisk/data/cgn_np_fbank_afgklno/wav/';
-% talabfile='/users/students/r0797363/spchdisk/data/cgn_np_fbank_afgklno/fac/all_facs_phones.scp';
-% components='afgklno';
-% lang = 'nl'
 
 
 pho={'[]','sil','p','t','k','b','d','g','f','v','s','z','S','Z','x','G',...
