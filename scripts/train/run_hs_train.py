@@ -57,6 +57,8 @@ def main(expdir, configfile):
     conf = load_config(os.path.join(expdir, 'config.cfg'))
     conf['expdir'] = expdir
 
+    os.makedirs('./datasets', exist_ok=True)
+
     # symbolic link dataset to ./datasets
     if os.path.islink(os.path.join("./datasets", conf['dataset'])):
         os.unlink(os.path.join("./datasets", conf['dataset']))

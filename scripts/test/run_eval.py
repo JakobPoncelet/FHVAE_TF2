@@ -10,6 +10,19 @@ import shutil
 import pickle
 import ast
 import tensorflow as tf
+##
+gpus = tf.config.experimental.list_physical_devices('GPU')
+# for gpu in gpus
+if gpus:
+    gpu = gpus[0]
+    try:
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+        tf.config.experimental.set_memory_growth(gpu, enable=True)
+        # break
+    except RuntimeError as e:
+        print(e)
+        pass
+##
 from configparser import ConfigParser
 from collections import OrderedDict
 from scripts.test.eval_loaders import load_data_reg
@@ -31,14 +44,14 @@ Working directory:
 '''
 
 
-def main(expdir):
+def main(conf, dump_only=True):
     ''' main function '''
-
-    os.makedirs(os.path.join(expdir, 'test'), exist_ok=True)
+    print('Using split: %s' % conf['set_name'])
+    expdir = conf['expdir']
+    os.makedirs(os.path.join(expdir, conf['set_name']), exist_ok=True)
     # read and copy the config file, change location if necessary
     # shutil.copyfile('./config.cfg', os.path.join(expdir, 'test', 'config.cfg'))
-    conf = load_config(os.path.join(expdir, 'config.cfg'))
-    conf['expdir'] = expdir
+
 
     # load tr_shape and classes from training stage
     with open(os.path.join(expdir, "trainconf.pkl"), "rb") as fid:
@@ -48,6 +61,7 @@ def main(expdir):
     conf['train_talab_vals'] = trainconf['talab_vals']
 
     # lower the batch size when you have memory problems!
+    print('Loading data into memory...')
     tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset = \
         load_data_reg(conf['dataset_test'], conf['set_name'], conf['fac_root'], conf['facs'], conf['talabs'], conf['train_talab_vals'])
 
@@ -85,7 +99,7 @@ def main(expdir):
                             alpha_dis=conf['alpha_dis'], alpha_reg_b=conf['alpha_reg_b'], alpha_reg_c=conf['alpha_reg_c'])
 
     #START
-    test_reg(expdir, model, conf, tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset)
+    test_reg(expdir, model, conf, tt_iterator, tt_iterator_by_seqs, tt_seqs, tt_dset, dump_only)
 
 
 def load_config(conf):
@@ -114,10 +128,21 @@ if __name__ == '__main__':
                         help="where to store the experiment (directory containing the trained model)")
     parser.add_argument("--config", type=str, default="./config.cfg",
                         help="configuration file to use for testing (default is the one stored in expdir)")
+    parser.add_argument("--dump", action='store_true', help="dump all mu-values of dev, train, test sets (default: False)")
     args = parser.parse_args()
 
     if not os.path.isdir(args.expdir):
         print("Expdir does not exist.")
         exit(1)
-
-    main(args.expdir)
+    conf = load_config(os.path.join(args.expdir, 'config.cfg'))
+    conf['expdir'] = args.expdir
+    if args.dump:
+        print('Dump mode on: dump all mu-values of dev, train, test sets')
+        conf['set_name'] = 'test'
+        main(conf, dump_only=False)
+        for set_name in ['dev', 'train']:
+            conf['set_name'] = set_name
+            main(conf, dump_only=True)
+    else:
+        print('Dump mode off')
+        main(conf, dump_only=False)
