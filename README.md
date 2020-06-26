@@ -1,6 +1,9 @@
 # FHVAE_TF2
+
 ## Implementation
 Implementation of Scalable Factorised Hierarchical Variational Autoencoder (https://github.com/wnhsu/ScalableFHVAE) in Tensorflow 2.0 and Python 3.6.8. It is not verified yet if the code is 100% correct compared to the original code!!
+
+There are additional regularisations added to the model from the paper (see below), so this is not exactly the same model.
 
 ## Model
 It is possible to use the LSTM model of the paper, or use a Transformer for the encoder (still quite experimental, results not convincing yet). 
