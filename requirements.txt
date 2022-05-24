@@ -6,4 +6,4 @@ scipy==1.3.2
 SoundFile==0.10.2
 scikit-learn==0.22.1
 sphfile==1.0.1
-tensorflow==2.0.1
+tensorflow==2.6.4
